@@ -19,7 +19,22 @@
 
 #include "netguard.h"
 
-extern FILE *pcap_file;
+///////////////////////////////////////////////////////////////////////////////
+// Definitions
+///////////////////////////////////////////////////////////////////////////////
+
+#define UDP4_MAXMSG (IP_MAXPACKET - 20 - 8) // bytes (socket)
+#define UDP6_MAXMSG (IPV6_MAXPACKET - 40 - 8) // bytes (socket)
+
+#define UDP_TIMEOUT_53 15 // seconds
+#define UDP_TIMEOUT_ANY 300 // seconds
+#define UDP_KEEP_TIMEOUT 60 // seconds
+
+
+static int open_udp_socket(const struct arguments *args,
+                    const struct udp_session *cur, const struct allowed *redirect);
+
+///////////////////////////////////////////////////////////////////////////////
 
 int get_udp_timeout(const struct udp_session *u, int sessions, int maxsessions) {
     int timeout = (ntohs(u->dest) == 53 ? UDP_TIMEOUT_53 : UDP_TIMEOUT_ANY);
@@ -47,7 +62,7 @@ int check_udp_session(const struct arguments *args, struct ng_session *s,
     // Check session timeout
     int timeout = get_udp_timeout(&s->udp, sessions, maxsessions);
     if (s->udp.state == UDP_ACTIVE && s->udp.time + timeout < now) {
-        log_android(ANDROID_LOG_WARN, "UDP idle %d/%d sec state %d from %s/%u to %s/%u",
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "UDP idle %d/%d sec state %d from %s/%u to %s/%u",
                     now - s->udp.time, timeout, s->udp.state,
                     source, ntohs(s->udp.source), dest, ntohs(s->udp.dest));
         s->udp.state = UDP_FINISHING;
@@ -55,11 +70,11 @@ int check_udp_session(const struct arguments *args, struct ng_session *s,
 
     // Check finished sessions
     if (s->udp.state == UDP_FINISHING) {
-        log_android(ANDROID_LOG_INFO, "UDP close from %s/%u to %s/%u socket %d",
+        log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP close from %s/%u to %s/%u socket %d",
                     source, ntohs(s->udp.source), dest, ntohs(s->udp.dest), s->socket);
 
         if (close(s->socket))
-            log_android(ANDROID_LOG_ERROR, "UDP close %d error %d: %s",
+            log_print(PLATFORM_LOG_PRIORITY_ERROR, "UDP close %d error %d: %s",
                         s->socket, errno, strerror(errno));
         s->socket = -1;
 
@@ -93,10 +108,10 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
         socklen_t optlen = sizeof(int);
         int err = getsockopt(s->socket, SOL_SOCKET, SO_ERROR, &serr, &optlen);
         if (err < 0)
-            log_android(ANDROID_LOG_ERROR, "UDP getsockopt error %d: %s",
+            log_print(PLATFORM_LOG_PRIORITY_ERROR, "UDP getsockopt error %d: %s",
                         errno, strerror(errno));
         else if (serr)
-            log_android(ANDROID_LOG_ERROR, "UDP SO_ERROR %d: %s", serr, strerror(serr));
+            log_print(PLATFORM_LOG_PRIORITY_ERROR, "UDP SO_ERROR %d: %s", serr, strerror(serr));
 
         s->udp.state = UDP_FINISHING;
     } else {
@@ -108,13 +123,13 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
             ssize_t bytes = recv(s->socket, buffer, s->udp.mss, 0);
             if (bytes < 0) {
                 // Socket error
-                log_android(ANDROID_LOG_WARN, "UDP recv error %d: %s",
+                log_print(PLATFORM_LOG_PRIORITY_WARN, "UDP recv error %d: %s",
                             errno, strerror(errno));
 
                 if (errno != EINTR && errno != EAGAIN)
                     s->udp.state = UDP_FINISHING;
             } else if (bytes == 0) {
-                log_android(ANDROID_LOG_WARN, "UDP recv eof");
+                log_print(PLATFORM_LOG_PRIORITY_WARN, "UDP recv eof");
                 s->udp.state = UDP_FINISHING;
 
             } else {
@@ -124,7 +139,7 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
                     inet_ntop(AF_INET, &s->udp.daddr.ip4, dest, sizeof(dest));
                 else
                     inet_ntop(AF_INET6, &s->udp.daddr.ip6, dest, sizeof(dest));
-                log_android(ANDROID_LOG_INFO, "UDP recv bytes %d from %s/%u for tun",
+                log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP recv bytes %d from %s/%u for tun",
                             bytes, dest, ntohs(s->udp.dest));
 
                 s->udp.received += bytes;
@@ -192,7 +207,7 @@ void block_udp(const struct arguments *args,
         inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
     }
 
-    log_android(ANDROID_LOG_INFO, "UDP blocked session from %s/%u to %s/%u",
+    log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP blocked session from %s/%u to %s/%u",
                 source, ntohs(udphdr->source), dest, ntohs(udphdr->dest));
 
     // Register session
@@ -256,14 +271,14 @@ jboolean handle_udp(const struct arguments *args,
     }
 
     if (cur != NULL && cur->udp.state != UDP_ACTIVE) {
-        log_android(ANDROID_LOG_INFO, "UDP ignore session from %s/%u to %s/%u state %d",
+        log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP ignore session from %s/%u to %s/%u state %d",
                     source, ntohs(udphdr->source), dest, ntohs(udphdr->dest), cur->udp.state);
         return 0;
     }
 
     // Create new session if needed
     if (cur == NULL) {
-        log_android(ANDROID_LOG_INFO, "UDP new session from %s/%u to %s/%u",
+        log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP new session from %s/%u to %s/%u",
                     source, ntohs(udphdr->source), dest, ntohs(udphdr->dest));
 
         // Register session
@@ -304,14 +319,14 @@ jboolean handle_udp(const struct arguments *args,
             return 0;
         }
 
-        log_android(ANDROID_LOG_DEBUG, "UDP socket %d", s->socket);
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "UDP socket %d", s->socket);
 
         // Monitor events
         memset(&s->ev, 0, sizeof(struct epoll_event));
         s->ev.events = EPOLLIN | EPOLLERR;
         s->ev.data.ptr = s;
         if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, s->socket, &s->ev))
-            log_android(ANDROID_LOG_ERROR, "epoll add udp error %d: %s", errno, strerror(errno));
+            log_print(PLATFORM_LOG_PRIORITY_ERROR, "epoll add udp error %d: %s", errno, strerror(errno));
 
         s->next = args->ctx->ng_session;
         args->ctx->ng_session = s;
@@ -325,7 +340,7 @@ jboolean handle_udp(const struct arguments *args,
             return 1;
     }
 
-    log_android(ANDROID_LOG_INFO, "UDP forward from tun %s/%u to %s/%u data %d",
+    log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP forward from tun %s/%u to %s/%u data %d",
                 source, ntohs(udphdr->source), dest, ntohs(udphdr->dest), datalen);
 
     cur->udp.time = time(NULL);
@@ -346,7 +361,7 @@ jboolean handle_udp(const struct arguments *args,
         }
     } else {
         rversion = (strstr(redirect->raddr, ":") == NULL ? 4 : 6);
-        log_android(ANDROID_LOG_WARN, "UDP%d redirect to %s/%u",
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "UDP%d redirect to %s/%u",
                     rversion, redirect->raddr, redirect->rport);
 
         if (rversion == 4) {
@@ -364,7 +379,7 @@ jboolean handle_udp(const struct arguments *args,
                (rversion == 4 ? (const struct sockaddr *) &addr4
                               : (const struct sockaddr *) &addr6),
                (socklen_t) (rversion == 4 ? sizeof(addr4) : sizeof(addr6))) != datalen) {
-        log_android(ANDROID_LOG_ERROR, "UDP sendto error %d: %s", errno, strerror(errno));
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "UDP sendto error %d: %s", errno, strerror(errno));
         if (errno != EINTR && errno != EAGAIN) {
             cur->udp.state = UDP_FINISHING;
             return 0;
@@ -375,7 +390,7 @@ jboolean handle_udp(const struct arguments *args,
     return 1;
 }
 
-int open_udp_socket(const struct arguments *args,
+static int open_udp_socket(const struct arguments *args,
                     const struct udp_session *cur, const struct allowed *redirect) {
     int sock;
     int version;
@@ -387,7 +402,7 @@ int open_udp_socket(const struct arguments *args,
     // Get UDP socket
     sock = socket(version == 4 ? PF_INET : PF_INET6, SOCK_DGRAM, IPPROTO_UDP);
     if (sock < 0) {
-        log_android(ANDROID_LOG_ERROR, "UDP socket error %d: %s", errno, strerror(errno));
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "UDP socket error %d: %s", errno, strerror(errno));
         return -1;
     }
 
@@ -399,26 +414,26 @@ int open_udp_socket(const struct arguments *args,
     if (cur->version == 4) {
         uint32_t broadcast4 = INADDR_BROADCAST;
         if (memcmp(&cur->daddr.ip4, &broadcast4, sizeof(broadcast4)) == 0) {
-            log_android(ANDROID_LOG_WARN, "UDP4 broadcast");
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "UDP4 broadcast");
             int on = 1;
             if (setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on)))
-                log_android(ANDROID_LOG_ERROR, "UDP setsockopt SO_BROADCAST error %d: %s",
+                log_print(PLATFORM_LOG_PRIORITY_ERROR, "UDP setsockopt SO_BROADCAST error %d: %s",
                             errno, strerror(errno));
         }
     } else {
         // http://man7.org/linux/man-pages/man7/ipv6.7.html
         if (*((uint8_t *) &cur->daddr.ip6) == 0xFF) {
-            log_android(ANDROID_LOG_WARN, "UDP6 broadcast");
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "UDP6 broadcast");
 
             int loop = 1; // true
             if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, &loop, sizeof(loop)))
-                log_android(ANDROID_LOG_ERROR,
+                log_print(PLATFORM_LOG_PRIORITY_ERROR,
                             "UDP setsockopt IPV6_MULTICAST_LOOP error %d: %s",
                             errno, strerror(errno));
 
             int ttl = -1; // route default
             if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &ttl, sizeof(ttl)))
-                log_android(ANDROID_LOG_ERROR,
+                log_print(PLATFORM_LOG_PRIORITY_ERROR,
                             "UDP setsockopt IPV6_MULTICAST_HOPS error %d: %s",
                             errno, strerror(errno));
 
@@ -426,7 +441,7 @@ int open_udp_socket(const struct arguments *args,
             memcpy(&mreq6.ipv6mr_multiaddr, &cur->daddr.ip6, sizeof(struct in6_addr));
             mreq6.ipv6mr_interface = INADDR_ANY;
             if (setsockopt(sock, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq6, sizeof(mreq6)))
-                log_android(ANDROID_LOG_ERROR,
+                log_print(PLATFORM_LOG_PRIORITY_ERROR,
                             "UDP setsockopt IPV6_ADD_MEMBERSHIP error %d: %s",
                             errno, strerror(errno));
         }
@@ -438,7 +453,7 @@ int open_udp_socket(const struct arguments *args,
 ssize_t write_udp(const struct arguments *args, const struct udp_session *cur,
                   uint8_t *data, size_t datalen) {
     size_t len;
-    u_int8_t *buffer;
+    uint8_t *buffer;
     struct udphdr *udp;
     uint16_t csum;
     char source[INET6_ADDRSTRLEN + 1];
@@ -525,7 +540,7 @@ ssize_t write_udp(const struct arguments *args, const struct udp_session *cur,
               sizeof(dest));
 
     // Send packet
-    log_android(ANDROID_LOG_DEBUG,
+    log_print(PLATFORM_LOG_PRIORITY_DEBUG,
                 "UDP sending to tun %d from %s/%u to %s/%u data %u",
                 args->tun, dest, ntohs(cur->dest), source, ntohs(cur->source), len);
 
@@ -536,12 +551,12 @@ ssize_t write_udp(const struct arguments *args, const struct udp_session *cur,
         if (pcap_file != NULL)
             write_pcap_rec(buffer, (size_t) res);
     } else
-        log_android(ANDROID_LOG_WARN, "UDP write error %d: %s", errno, strerror(errno));
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "UDP write error %d: %s", errno, strerror(errno));
 
     ng_free(buffer, __FILE__, __LINE__);
 
     if (res != len) {
-        log_android(ANDROID_LOG_ERROR, "write %d/%d", res, len);
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "write %d/%d", res, len);
         return -1;
     }
 

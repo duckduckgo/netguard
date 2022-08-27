@@ -19,7 +19,15 @@
 
 #include "netguard.h"
 
-extern int loglevel;
+#include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <errno.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <poll.h>
+
+static uint8_t char2nible(const char c);
 
 uint16_t calc_checksum(uint16_t start, const uint8_t *buffer, size_t length) {
     register uint32_t sum = start;
@@ -54,24 +62,7 @@ int compare_u32(uint32_t s1, uint32_t s2) {
         return 1;
 }
 
-int sdk_int(JNIEnv *env) {
-    jclass clsVersion = jniFindClass(env, "android/os/Build$VERSION");
-    jfieldID fid = (*env)->GetStaticFieldID(env, clsVersion, "SDK_INT", "I");
-    return (*env)->GetStaticIntField(env, clsVersion, fid);
-}
-
-void log_android(int prio, const char *fmt, ...) {
-    if (prio >= loglevel) {
-        char line[1024];
-        va_list argptr;
-        va_start(argptr, fmt);
-        vsprintf(line, fmt, argptr);
-        __android_log_print(prio, TAG, "%s", line);
-        va_end(argptr);
-    }
-}
-
-uint8_t char2nible(const char c) {
+static uint8_t char2nible(const char c) {
     if (c >= '0' && c <= '9') return (uint8_t) (c - '0');
     if (c >= 'a' && c <= 'f') return (uint8_t) ((c - 'a') + 10);
     if (c >= 'A' && c <= 'F') return (uint8_t) ((c - 'A') + 10);
@@ -126,7 +117,7 @@ const char *strstate(const int state) {
     }
 }
 
-char *hex(const u_int8_t *data, const size_t len) {
+char *hex(const uint8_t *data, const size_t len) {
     char hex_str[] = "0123456789ABCDEF";
 
     char *hexout;
@@ -146,7 +137,7 @@ int32_t get_local_port(const int sock) {
     struct sockaddr_in sin;
     socklen_t len = sizeof(sin);
     if (getsockname(sock, (struct sockaddr *) &sin, &len) < 0) {
-        log_android(ANDROID_LOG_ERROR, "getsockname error %d: %s", errno, strerror(errno));
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "getsockname error %d: %s", errno, strerror(errno));
         return -1;
     } else
         return ntohs(sin.sin_port);
@@ -159,7 +150,7 @@ int is_event(int fd, short event) {
     p.revents = 0;
     int r = poll(&p, 1, 0);
     if (r < 0) {
-        log_android(ANDROID_LOG_ERROR, "poll readable error %d: %s", errno, strerror(errno));
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "poll readable error %d: %s", errno, strerror(errno));
         return 0;
     } else if (r == 0)
         return 0;

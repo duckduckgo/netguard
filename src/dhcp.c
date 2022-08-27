@@ -19,33 +19,64 @@
 
 #include "netguard.h"
 
+///////////////////////////////////////////////////////////////////////////////
+// Definitions
+///////////////////////////////////////////////////////////////////////////////
+
+#define DHCP_OPTION_MAGIC_NUMBER (0x63825363)
+
+typedef struct dhcp_packet {
+    uint8_t opcode;
+    uint8_t htype;
+    uint8_t hlen;
+    uint8_t hops;
+    uint32_t xid;
+    uint16_t secs;
+    uint16_t flags;
+    uint32_t ciaddr;
+    uint32_t yiaddr;
+    uint32_t siaddr;
+    uint32_t giaddr;
+    uint8_t chaddr[16];
+    uint8_t sname[64];
+    uint8_t file[128];
+    uint32_t option_format;
+} __packed dhcp_packet;
+
+typedef struct dhcp_option {
+    uint8_t code;
+    uint8_t length;
+} __packed dhcp_option;
+
+///////////////////////////////////////////////////////////////////////////////
+
 int check_dhcp(const struct arguments *args, const struct udp_session *u,
                const uint8_t *data, const size_t datalen) {
 
     // This is untested
     // Android routing of DHCP is erroneous
 
-    log_android(ANDROID_LOG_WARN, "DHCP check");
+    log_print(PLATFORM_LOG_PRIORITY_WARN, "DHCP check");
 
     if (datalen < sizeof(struct dhcp_packet)) {
-        log_android(ANDROID_LOG_WARN, "DHCP packet size %d", datalen);
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "DHCP packet size %d", datalen);
         return -1;
     }
 
     const struct dhcp_packet *request = (struct dhcp_packet *) data;
 
     if (ntohl(request->option_format) != DHCP_OPTION_MAGIC_NUMBER) {
-        log_android(ANDROID_LOG_WARN, "DHCP invalid magic %x", request->option_format);
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "DHCP invalid magic %x", request->option_format);
         return -1;
     }
 
     if (request->htype != 1 || request->hlen != 6) {
-        log_android(ANDROID_LOG_WARN, "DHCP unknown hardware htype %d hlen %d",
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "DHCP unknown hardware htype %d hlen %d",
                     request->htype, request->hlen);
         return -1;
     }
 
-    log_android(ANDROID_LOG_WARN, "DHCP opcode", request->opcode);
+    log_print(PLATFORM_LOG_PRIORITY_WARN, "DHCP opcode", request->opcode);
 
     // Discover: source 0.0.0.0:68 destination 255.255.255.255:67
     // Offer: source 10.1.10.1:67 destination 255.255.255.255:68
