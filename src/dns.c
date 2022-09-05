@@ -134,11 +134,11 @@ static int32_t get_qname(const uint8_t *data, const size_t datalen, uint16_t off
     return (c ? off : ptr);
 }
 
-void parse_dns_response(const struct arguments *args, const struct ng_session *s,
+int parse_dns_response(const struct arguments *args, const struct ng_session *s,
                         const uint8_t *data, size_t *datalen) {
     if (*datalen < sizeof(struct dns_header) + 1) {
         log_print(PLATFORM_LOG_PRIORITY_WARN, "DNS response length %d", *datalen);
-        return;
+        return 0;
     }
 
     // Check if standard DNS query
@@ -175,7 +175,7 @@ void parse_dns_response(const struct arguments *args, const struct ng_session *s
             } else {
                 log_print(PLATFORM_LOG_PRIORITY_WARN,
                             "DNS response Q invalid off %d datalen %d", off, *datalen);
-                return;
+                return 0;
             }
         }
 
@@ -199,12 +199,12 @@ void parse_dns_response(const struct arguments *args, const struct ng_session *s
                             if (off + sizeof(__be32) <= *datalen)
                                 inet_ntop(AF_INET, data + off, rd, sizeof(rd));
                             else
-                                return;
+                                return 0;
                         } else if (qclass == DNS_QCLASS_IN && qtype == DNS_QTYPE_AAAA) {
                             if (off + sizeof(struct in6_addr) <= *datalen)
                                 inet_ntop(AF_INET6, data + off, rd, sizeof(rd));
                             else
-                                return;
+                                return 0;
                         }
 
                         dns_resolved(args, qname, name, rd, ttl);
@@ -227,12 +227,12 @@ void parse_dns_response(const struct arguments *args, const struct ng_session *s
                     log_print(PLATFORM_LOG_PRIORITY_WARN,
                                 "DNS response A invalid off %d rdlength %d datalen %d",
                                 off, rdlength, *datalen);
-                    return;
+                    return 0;
                 }
             } else {
                 log_print(PLATFORM_LOG_PRIORITY_WARN,
                             "DNS response A invalid off %d datalen %d", off, *datalen);
-                return;
+                return 0;
             }
         }
 
@@ -297,9 +297,13 @@ void parse_dns_response(const struct arguments *args, const struct ng_session *s
             packet.uid = 0;
             packet.allowed = 0;
             log_packet(args, &packet);
+            // TODO this is a temporary hack to minimise heavy retries. We'll refactor DNS parsing later on
+            return 1; // signal DNS request should be blocked
         }
     } else if (acount > 0)
         log_print(PLATFORM_LOG_PRIORITY_WARN,
                     "DNS response qr %d opcode %d qcount %d acount %d",
                     dns->qr, dns->opcode, qcount, acount);
+
+    return 0;
 }

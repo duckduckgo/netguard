@@ -145,11 +145,12 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
                 s->udp.received += bytes;
 
                 // Process DNS response
+                int block_dns = 0;
                 if (ntohs(s->udp.dest) == 53)
-                    parse_dns_response(args, s, buffer, (size_t *) &bytes);
+                    block_dns = parse_dns_response(args, s, buffer, (size_t *) &bytes);
 
                 // Forward to tun
-                if (write_udp(args, &s->udp, buffer, (size_t) bytes) < 0)
+                if (block_dns == 0 && write_udp(args, &s->udp, buffer, (size_t) bytes) < 0)
                     s->udp.state = UDP_FINISHING;
                 else {
                     // Prevent too many open files

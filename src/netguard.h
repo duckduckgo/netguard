@@ -139,7 +139,11 @@ void check_icmp_socket(const struct arguments *args, const struct epoll_event *e
 
 void check_udp_socket(const struct arguments *args, const struct epoll_event *ev);
 
-void parse_dns_response(const struct arguments *args, const struct ng_session *session,
+
+/**
+* @brief Parses the DNS response and returns "1" if marked as blocked or "0" if not.
+*/
+int parse_dns_response(const struct arguments *args, const struct ng_session *session,
                         const uint8_t *data, size_t *datalen);
 
 void check_tcp_socket(const struct arguments *args,

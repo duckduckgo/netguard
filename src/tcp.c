@@ -650,13 +650,14 @@ void check_tcp_socket(const struct arguments *args,
                         s->tcp.received += bytes;
 
                         // Process DNS response
+                        int block_dns = 0;
                         if (ntohs(s->tcp.dest) == 53 && bytes > 2) {
                             ssize_t dlen = bytes - 2;
-                            parse_dns_response(args, s, buffer + 2, (size_t *) &dlen);
+                            block_dns = parse_dns_response(args, s, buffer + 2, (size_t *) &dlen);
                         }
 
                         // Forward to tun
-                        if (write_data(args, &s->tcp, buffer, (size_t) bytes) >= 0) {
+                        if (block_dns == 0 && write_data(args, &s->tcp, buffer, (size_t) bytes) >= 0) {
                             s->tcp.local_seq += bytes;
                             s->tcp.unconfirmed++;
                         }
