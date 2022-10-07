@@ -1,6 +1,8 @@
 
 #include "netguard.h"
 
+#define FQDN_LENGTH 256
+
 static void get_server_name(
     const uint8_t *pkt,
     size_t length,
@@ -20,8 +22,8 @@ void tls_sni_inspection(
 ) {
     char dest[INET6_ADDRSTRLEN + 1];
     inet_ntop(version == 4 ? AF_INET : AF_INET6, daddr, dest, sizeof(dest));
-    char sn[256];
-    memset(sn, 0, 256);
+    char sn[FQDN_LENGTH];
+    memset(sn, 0, FQDN_LENGTH);
     *sn = 0;
 
     get_server_name(pkt, length, daddr, version, tcp_payload, sn);
@@ -54,7 +56,7 @@ static void get_server_name(
     uint8_t *tls = (uint8_t *) (tcp_payload + sizeof(struct tcphdr));
     uint8_t content_type = (uint8_t) *tls;
     if (content_type >= 20 && content_type <= 24){
-        // extrac TLS versions
+        // extract TLS versions
         uint8_t tls_major_version = (uint8_t) tls[1];
         uint8_t tls_minor_version = (uint8_t) tls[2];
 
@@ -127,10 +129,14 @@ static void get_server_name(
                         uint16_t server_name_len = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
                         index += 2;
 
-                        memcpy(server_name, &tls[index], server_name_len);
-                        server_name[server_name_len] = 0;
-
-                        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS server name (%d bytes) is %s (%s)", server_name_len, server_name, dest);
+                        // This should not happen but just guarding against it
+                        if (server_name_len > FQDN_LENGTH) {
+                            log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS SNI too long %d", server_name_len);
+                        } else {
+                            memcpy(server_name, &tls[index], server_name_len);
+                            server_name[server_name_len] = 0;
+                            log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS server name (%d bytes) is %s (%s)", server_name_len, server_name, dest);
+                        }
                     }
 
                 }
