@@ -18,6 +18,7 @@
 */
 
 #include "netguard.h"
+#include <errno.h>
 
 ///////////////////////////////////////////////////////////////////////////////
 // Definitions
@@ -703,13 +704,19 @@ jboolean handle_tcp(const struct arguments *args,
     // Prepare logging
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
+    void *daddr;
     if (version == 4) {
         inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
         inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
+        daddr = &ip4->daddr;
     } else {
         inet_ntop(AF_INET6, &ip6->ip6_src, source, sizeof(source));
         inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
+        daddr = &ip6->ip6_dst;
     }
+
+    // intercept TLS
+    tls_sni_inspection(args, pkt, length, daddr, version, payload);
 
     char flags[10];
     int flen = 0;
@@ -826,8 +833,14 @@ jboolean handle_tcp(const struct arguments *args,
             // Open socket
             s->socket = open_tcp_socket(args, &s->tcp, redirect);
             if (s->socket < 0) {
+                int errorcode = s->socket;
                 // Remote might retry
                 ng_free(s, __FILE__, __LINE__);
+
+                // too many open files error, report it
+                if (errorcode == EMFILE) {
+                    report_error(args, errorcode, "TCP open socket error %d", errorcode);
+                }
                 return 0;
             }
 

@@ -155,7 +155,7 @@ void tls_sni_inspection(const struct arguments *args,
                         size_t length,
                         void *daddr,
                         uint8_t version,
-                        uint8_t *tcp_payload
+                        const uint8_t *tcp_payload
 );
 
 jboolean handle_icmp(const struct arguments *args,
