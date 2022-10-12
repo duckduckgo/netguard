@@ -96,8 +96,6 @@ struct ip6_hdr_pseudo {
 
 // Prototypes
 
-void handle_signal(int sig, siginfo_t *info, void *context);
-
 void *handle_events(void *a);
 
 void report_exit(const struct arguments *args, const char *fmt, ...);
@@ -132,7 +130,7 @@ uint16_t get_default_mss(int version);
 
 int check_tun(const struct arguments *args,
               const struct epoll_event *ev,
-              const int epoll_fd,
+              int epoll_fd,
               int sessions, int maxsessions);
 
 void check_icmp_socket(const struct arguments *args, const struct epoll_event *ev);
@@ -148,7 +146,7 @@ int parse_dns_response(const struct arguments *args, const struct ng_session *se
 
 void check_tcp_socket(const struct arguments *args,
                       const struct epoll_event *ev,
-                      const int epoll_fd);
+                      int epoll_fd);
 
 void sni_resolved(const struct arguments *args, const char *name, const char *daddr);
 

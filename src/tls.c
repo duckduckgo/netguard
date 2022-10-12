@@ -1,7 +1,16 @@
 
 #include "netguard.h"
 
+///////////////////////////////////////////////////////////////////////////////
+// Definitions
+///////////////////////////////////////////////////////////////////////////////
+
 #define FQDN_LENGTH 256
+
+#define TLS_TYPE_HANDSHAKE_RECORD 22
+#define TLS_TYPE_APPLICATION_DATA 23
+
+#define TLS_EXTENSION_TYPE_SERVER_NAME 0
 
 static void get_server_name(
     const uint8_t *pkt,
@@ -11,6 +20,8 @@ static void get_server_name(
     uint8_t *tcp_payload,
     char *server_name
 );
+
+///////////////////////////////////////////////////////////////////////////////
 
 void tls_sni_inspection(
     const struct arguments *args,
@@ -64,9 +75,9 @@ static void get_server_name(
 
         if (tls_major_version < 0x03){
             log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS %d does not have SNI header", tls_major_version);
-        } else if (content_type == 23) { // content type application data
+        } else if (content_type == TLS_TYPE_APPLICATION_DATA) { // content type application data
             log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS application data for address %s", dest);
-        } else if (content_type == 22) { // content type handshake
+        } else if (content_type == TLS_TYPE_HANDSHAKE_RECORD) { // content type handshake
             // handshake packet type
             uint16_t tls_handshake_size = (tls[3] << 8 & 0xFF00) + (tls[4] & 0x00FF);
             if (length - (tls - pkt) < 5) {
@@ -104,7 +115,7 @@ static void get_server_name(
                         index += 2;
 
                         // Extension type is SERVER_NAME_EXTENSION_TYPE
-                        if (extension_type == 0) {
+                        if (extension_type == TLS_EXTENSION_TYPE_SERVER_NAME) {
                             log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS ClientHello SNI found at %d", index);
                             found = 1;
                             break;
@@ -114,16 +125,16 @@ static void get_server_name(
                             uint16_t extension_len = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
                             index += 2;
                             // skip to the next extension, if there is one
-                            index += extensions_len;
+                            index += extension_len;
 
                             // record number of extension bytes searched
                             // which is the current extension length + 4 (2 bytes for type, 2 bytes for length)
-                            searched += extensions_len + 4;
+                            searched += extension_len + 4;
                         }
                     }
 
                     if (found) {
-                        // skip 5 bytes for data sizes we don't need to know about
+                        // skip 5 bytes for data sizes and list entry type we don't need to know about
                         index += 5;
 
                         uint16_t server_name_len = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
