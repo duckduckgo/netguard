@@ -289,9 +289,6 @@ static void handle_ip(const struct arguments *args,
         if (tcp->rst)
             flags[flen++] = 'R';
 
-        // intercept TLS
-        tls_sni_inspection(args, pkt, length, daddr, version, payload);
-
         // TODO checksum
     } else if (protocol != IPPROTO_HOPOPTS && protocol != IPPROTO_IGMP && protocol != IPPROTO_ESP)
         log_print(PLATFORM_LOG_PRIORITY_WARN, "Unknown protocol %d", protocol);

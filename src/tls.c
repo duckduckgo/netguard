@@ -17,7 +17,7 @@ static void get_server_name(
     size_t length,
     void *daddr,
     uint8_t version,
-    uint8_t *tcp_payload,
+    const uint8_t *tcp_payload,
     char *server_name
 );
 
@@ -29,7 +29,7 @@ void tls_sni_inspection(
     size_t length,
     void *daddr,
     uint8_t version,
-    uint8_t *tcp_payload
+    const uint8_t *tcp_payload
 ) {
     char dest[INET6_ADDRSTRLEN + 1];
     inet_ntop(version == 4 ? AF_INET : AF_INET6, daddr, dest, sizeof(dest));
@@ -54,7 +54,7 @@ static void get_server_name(
     size_t length,
     void *daddr,
     uint8_t version,
-    uint8_t *tcp_payload,
+    const uint8_t *tcp_payload,
     char *server_name
 ) {
     // ensure length is 0

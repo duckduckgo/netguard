@@ -703,13 +703,19 @@ jboolean handle_tcp(const struct arguments *args,
     // Prepare logging
     char source[INET6_ADDRSTRLEN + 1];
     char dest[INET6_ADDRSTRLEN + 1];
+    void *daddr;
     if (version == 4) {
         inet_ntop(AF_INET, &ip4->saddr, source, sizeof(source));
         inet_ntop(AF_INET, &ip4->daddr, dest, sizeof(dest));
+        daddr = &ip4->daddr;
     } else {
         inet_ntop(AF_INET6, &ip6->ip6_src, source, sizeof(source));
         inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
+        daddr = &ip6->ip6_dst;
     }
+
+    // intercept TLS
+    tls_sni_inspection(args, pkt, length, daddr, version, payload);
 
     char flags[10];
     int flen = 0;
