@@ -1109,6 +1109,9 @@ static int open_tcp_socket(const struct arguments *args,
     // Get TCP socket
     if ((sock = socket(version == 4 ? PF_INET : PF_INET6, SOCK_STREAM, 0)) < 0) {
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "socket error %d: %s", errno, strerror(errno));
+        if (errno == EMFILE) {
+            report_error(args, errno, "TCP open socket error %d", errno);
+        }
         return -1;
     }
 
