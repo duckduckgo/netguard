@@ -715,7 +715,10 @@ jboolean handle_tcp(const struct arguments *args,
     }
 
     // intercept TLS
-    tls_sni_inspection(args, pkt, length, daddr, version, payload);
+    if(cur != NULL && is_sni_found_and_blocked(args, pkt, length, daddr, version, payload, cur->tcp.uid)) {
+        // Drop request for SNI domain that should be blocked
+        return 1;
+    }
 
     char flags[10];
     int flen = 0;
