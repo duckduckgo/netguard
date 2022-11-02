@@ -148,14 +148,18 @@ void check_tcp_socket(const struct arguments *args,
                       const struct epoll_event *ev,
                       int epoll_fd);
 
-void sni_resolved(const struct arguments *args, const char *name, const char *daddr);
-
-void tls_sni_inspection(const struct arguments *args,
-                        const uint8_t *pkt,
-                        size_t length,
-                        void *daddr,
-                        uint8_t version,
-                        const uint8_t *tcp_payload
+/**
+ * Inspect for SNI header, if found check if domain should be blocked
+ *
+ * @return "0" when SNI header should NOT be blocked, any other value otherwise
+ */
+int is_sni_found_and_blocked(const struct arguments *args,
+                              const uint8_t *pkt,
+                              size_t length,
+                              void *daddr,
+                              uint8_t version,
+                              const uint8_t *tcp_payload,
+                              int uid
 );
 
 jboolean handle_icmp(const struct arguments *args,

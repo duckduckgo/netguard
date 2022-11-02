@@ -305,48 +305,6 @@ void log_packet(const struct arguments *args, const packet_t *packet) {
 #endif
 }
 
-
-static jmethodID midSniResolved = NULL;
-
-void sni_resolved(const struct arguments *args, const char *name, const char *daddr) {
-#ifdef PROFILE_JNI
-    float mselapsed;
-    struct timeval start, end;
-    gettimeofday(&start, NULL);
-#endif
-
-    jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
-    ng_add_alloc(clsService, "clsService");
-
-    const char *signature = "(Ljava/lang/String;Ljava/lang/String;)V";
-    if (midSniResolved == NULL) {
-        midSniResolved = jniGetMethodID(args->env, clsService, "sniResolved", signature);
-    }
-
-    jstring jname = (*args->env)->NewStringUTF(args->env, name);
-    jstring jresource = (*args->env)->NewStringUTF(args->env, daddr);
-    ng_add_alloc(jname, "jname");
-    ng_add_alloc(jresource, "jresource");
-
-    (*args->env)->CallVoidMethod(args->env, args->instance, midSniResolved, jname, jresource);
-    jniCheckException(args->env);
-
-    (*args->env)->DeleteLocalRef(args->env, jname);
-    (*args->env)->DeleteLocalRef(args->env, jresource);
-    (*args->env)->DeleteLocalRef(args->env, clsService);
-    ng_delete_alloc(jname, __FILE__, __LINE__);
-    ng_delete_alloc(jresource, __FILE__, __LINE__);
-    ng_delete_alloc(clsService, __FILE__, __LINE__);
-
-#ifdef PROFILE_JNI
-    gettimeofday(&end, NULL);
-    mselapsed = (end.tv_sec - start.tv_sec) * 1000.0 +
-                (end.tv_usec - start.tv_usec) / 1000.0;
-    if (mselapsed > PROFILE_JNI)
-        log_print(PLATFORM_LOG_PRIORITY_WARN, "sni_resolved %f", mselapsed);
-#endif
-}
-
 static jmethodID midDnsResolved = NULL;
 static jmethodID midInitRR = NULL;
 jfieldID fidQTime = NULL;

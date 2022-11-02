@@ -23,13 +23,14 @@ static void get_server_name(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-void tls_sni_inspection(
+int is_sni_found_and_blocked(
     const struct arguments *args,
     const uint8_t *pkt,
     size_t length,
     void *daddr,
     uint8_t version,
-    const uint8_t *tcp_payload
+    const uint8_t *tcp_payload,
+    int uid
 ) {
     char dest[INET6_ADDRSTRLEN + 1];
     inet_ntop(version == 4 ? AF_INET : AF_INET6, daddr, dest, sizeof(dest));
@@ -41,12 +42,12 @@ void tls_sni_inspection(
 
     if (strlen(sn) == 0) {
         log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found");
-        return;
+        return 0;
     }
 
     log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server %s (%s) found", sn, dest);
 
-    sni_resolved(args, sn, dest);
+    return is_domain_blocked(args, sn, uid);
 }
 
 static void get_server_name(
