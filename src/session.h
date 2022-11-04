@@ -43,6 +43,7 @@ struct tcp_session {
 
     uint8_t state;
     uint8_t socks5;
+    char domain[256]; // destination domain server name
     struct segment *forward;
 };
 

@@ -715,7 +715,7 @@ jboolean handle_tcp(const struct arguments *args,
     }
 
     // intercept TLS
-    if(cur != NULL && is_sni_found_and_blocked(args, pkt, length, daddr, version, payload, cur->tcp.uid)) {
+    if(cur != NULL && is_sni_found_and_blocked(args, pkt, length, daddr, version, payload, &(cur->tcp))) {
         // Drop request for SNI domain that should be blocked
         return 1;
     }
@@ -817,6 +817,7 @@ jboolean handle_tcp(const struct arguments *args,
             s->tcp.dest = tcphdr->dest;
             s->tcp.state = TCP_LISTEN;
             s->tcp.socks5 = SOCKS5_NONE;
+            *(s->tcp.domain) = 0;
             s->tcp.forward = NULL;
             s->next = NULL;
 

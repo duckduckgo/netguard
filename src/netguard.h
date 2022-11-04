@@ -159,7 +159,7 @@ int is_sni_found_and_blocked(const struct arguments *args,
                               void *daddr,
                               uint8_t version,
                               const uint8_t *tcp_payload,
-                              int uid
+                              struct tcp_session *tcp_session
 );
 
 jboolean handle_icmp(const struct arguments *args,
