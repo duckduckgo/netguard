@@ -125,7 +125,12 @@ void get_server_name(
                         } else {
                             memcpy(server_name, &tls[index], server_name_len);
                             server_name[server_name_len] = 0;
-                            log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS server name (%d bytes) is %s (%s)", server_name_len, server_name, dest);
+                            if (is_valid_utf8(server_name)) {
+                                log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS server name (%d bytes) is %s (%s)", server_name_len, server_name, dest);
+                            } else {
+                                log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS server name not valid UTF-8: %s (%d bytes)", server_name, server_name_len);
+                                *server_name = 0;
+                            }
                         }
                     }
 
