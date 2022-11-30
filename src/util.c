@@ -171,3 +171,59 @@ long long get_ms() {
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return ts.tv_sec * 1000LL + ts.tv_nsec / 1e6;
 }
+
+static int is10x(int a) {
+    int bit1 = (a >> 7) & 1;
+    int bit2 = (a >> 6) & 1;
+    return (bit1 == 1) && (bit2 == 0);
+}
+
+int is_valid_utf8(const char *str) {
+    int str_len = strlen(str);
+    for (int i = 0; i < str_len; i++) {
+        // 0xxxxxxx
+        int bit1 = (str[i] >> 7) & 1;
+        if (bit1 == 0) continue;
+        // 110xxxxx 10xxxxxx
+        int bit2 = (str[i] >> 6) & 1;
+        if (bit2 == 0) return 0;
+        // 11
+        int bit3 = (str[i] >> 5) & 1;
+        if (bit3 == 0) {
+            // 110xxxxx 10xxxxxx
+            if ((++ i) < str_len) {
+                if (is10x(str[i])) {
+                    continue;
+                }
+                return 0;
+            } else {
+                return 0;
+            }
+        }
+        int bit4 = (str[i] >> 4) & 1;
+        if (bit4 == 0) {
+            // 1110xxxx 10xxxxxx 10xxxxxx
+            if (i + 2 < str_len) {
+                if (is10x(str[i + 1]) && is10x(str[i + 2])) {
+                    i += 2;
+                    continue;
+                }
+                return 0;
+            } else {
+                return 0;
+            }
+        }
+        int bit5 = (str[i] >> 3) & 1;
+        if (bit5 == 1) return false;
+        if (i + 3 < str_len) {
+            if (is10x(str[i + 1]) && is10x(str[i + 2]) && is10x(str[i + 3])) {
+                i += 3;
+                continue;
+            }
+            return 0;
+        } else {
+            return 0;
+        }
+    } // for
+    return 1;
+}
