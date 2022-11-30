@@ -1,27 +1,6 @@
 
 #include "netguard.h"
-
-///////////////////////////////////////////////////////////////////////////////
-// Definitions
-///////////////////////////////////////////////////////////////////////////////
-
-#define FQDN_LENGTH 256
-
-#define TLS_TYPE_HANDSHAKE_RECORD 22
-#define TLS_TYPE_APPLICATION_DATA 23
-
-#define TLS_EXTENSION_TYPE_SERVER_NAME 0
-
-static void get_server_name(
-    const uint8_t *pkt,
-    size_t length,
-    void *daddr,
-    uint8_t version,
-    const uint8_t *tcp_payload,
-    char *server_name
-);
-
-///////////////////////////////////////////////////////////////////////////////
+#include "tls.h"
 
 int is_sni_found_and_blocked(
     const struct arguments *args,
@@ -29,7 +8,7 @@ int is_sni_found_and_blocked(
     size_t length,
     void *daddr,
     uint8_t version,
-    const uint8_t *tcp_payload,
+    const uint8_t *tls,
     int uid
 ) {
     char dest[INET6_ADDRSTRLEN + 1];
@@ -38,7 +17,7 @@ int is_sni_found_and_blocked(
     memset(sn, 0, FQDN_LENGTH);
     *sn = 0;
 
-    get_server_name(pkt, length, daddr, version, tcp_payload, sn);
+    get_server_name(pkt, length, daddr, version, tls, sn);
 
     if (strlen(sn) == 0) {
         log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found");
@@ -50,12 +29,12 @@ int is_sni_found_and_blocked(
     return is_domain_blocked(args, sn, uid);
 }
 
-static void get_server_name(
+void get_server_name(
     const uint8_t *pkt,
     size_t length,
     void *daddr,
     uint8_t version,
-    const uint8_t *tcp_payload,
+    const uint8_t *tls,
     char *server_name
 ) {
     // ensure length is 0
@@ -65,7 +44,6 @@ static void get_server_name(
     inet_ntop(version == 4 ? AF_INET : AF_INET6, daddr, dest, sizeof(dest));
 
     // Check TLS client hello header
-    uint8_t *tls = (uint8_t *) (tcp_payload + sizeof(struct tcphdr));
     uint8_t content_type = (uint8_t) *tls;
     if (content_type >= 20 && content_type <= 24){
         // extract TLS versions
