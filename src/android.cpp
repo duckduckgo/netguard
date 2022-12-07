@@ -15,8 +15,8 @@ void __platform_log_print(int prio, const char *tag, const char *fmt, ...) {
 
 int __sdk_int(JNIEnv *env) {
     jclass clsVersion = jniFindClass(env, "android/os/Build$VERSION");
-    jfieldID fid = (*env)->GetStaticFieldID(env, clsVersion, "SDK_INT", "I");
-    return (*env)->GetStaticIntField(env, clsVersion, fid);
+    jfieldID fid = env->GetStaticFieldID(clsVersion, "SDK_INT", "I");
+    return env->GetStaticIntField(clsVersion, fid);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -26,7 +26,7 @@ int __sdk_int(JNIEnv *env) {
 JNIEXPORT jlong JNICALL
 Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1init(
         JNIEnv *env, jobject instance, jint sdk) {
-    struct context *ctx = ng_calloc(1, sizeof(struct context), "init");
+    struct context *ctx = (struct context *) ng_calloc(1, sizeof(struct context), "init");
     ctx->sdk = sdk;
 
     loglevel = PLATFORM_LOG_PRIORITY_WARN;
@@ -81,7 +81,7 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1run(
                     errno, strerror(errno));
 
     // Get arguments
-    struct arguments *args = ng_malloc(sizeof(struct arguments), "arguments");
+    struct arguments *args = (struct arguments *) ng_malloc(sizeof(struct arguments), "arguments");
     args->env = env;
     args->instance = instance;
     args->tun = tun;
@@ -122,8 +122,8 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1get_1stats(
     if (pthread_mutex_lock(&ctx->lock))
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "pthread_mutex_lock failed");
 
-    jintArray jarray = (*env)->NewIntArray(env, 5);
-    jint *jcount = (*env)->GetIntArrayElements(env, jarray, NULL);
+    jintArray jarray = env->NewIntArray(5);
+    jint *jcount = env->GetIntArrayElements(jarray, NULL);
 
     struct ng_session *s = ctx->ng_session;
     while (s != NULL) {
@@ -158,7 +158,7 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1get_1stats(
     getrlimit(RLIMIT_NOFILE, &rlim);
     jcount[4] = (jint) rlim.rlim_cur;
 
-    (*env)->ReleaseIntArrayElements(env, jarray, jcount, 0);
+    env->ReleaseIntArrayElements(jarray, jcount, 0);
     return jarray;
 }
 
@@ -190,7 +190,7 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1pcap(
         }
         log_print(PLATFORM_LOG_PRIORITY_WARN, "PCAP disabled");
     } else {
-        const char *name = (*env)->GetStringUTFChars(env, name_, 0);
+        const char *name = env->GetStringUTFChars(name_, 0);
         ng_add_alloc(name, "name");
         log_print(PLATFORM_LOG_PRIORITY_WARN, "PCAP file %s record size %d truncate @%ld",
                     name, pcap_record_size, pcap_file_size);
@@ -212,7 +212,7 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1pcap(
                 log_print(PLATFORM_LOG_PRIORITY_WARN, "PCAP current size %ld", size);
         }
 
-        (*env)->ReleaseStringUTFChars(env, name_, name);
+        env->ReleaseStringUTFChars(name_, name);
         ng_delete_alloc(name, __FILE__, __LINE__);
     }
 
@@ -224,9 +224,9 @@ JNIEXPORT void JNICALL
 Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1socks5(JNIEnv *env, jobject instance, jstring addr_,
                                                       jint port, jstring username_,
                                                       jstring password_) {
-    const char *addr = (*env)->GetStringUTFChars(env, addr_, 0);
-    const char *username = (*env)->GetStringUTFChars(env, username_, 0);
-    const char *password = (*env)->GetStringUTFChars(env, password_, 0);
+    const char *addr = env->GetStringUTFChars(addr_, 0);
+    const char *username = env->GetStringUTFChars(username_, 0);
+    const char *password = env->GetStringUTFChars(password_, 0);
     ng_add_alloc(addr, "addr");
     ng_add_alloc(username, "username");
     ng_add_alloc(password, "password");
@@ -239,9 +239,9 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1socks5(JNIEnv *env, job
     log_print(PLATFORM_LOG_PRIORITY_WARN, "SOCKS5 %s:%d user=%s",
                 socks5_addr, socks5_port, socks5_username);
 
-    (*env)->ReleaseStringUTFChars(env, addr_, addr);
-    (*env)->ReleaseStringUTFChars(env, username_, username);
-    (*env)->ReleaseStringUTFChars(env, password_, password);
+    env->ReleaseStringUTFChars(addr_, addr);
+    env->ReleaseStringUTFChars(username_, username);
+    env->ReleaseStringUTFChars(password_, password);
     ng_delete_alloc(addr, __FILE__, __LINE__);
     ng_delete_alloc(username, __FILE__, __LINE__);
     ng_delete_alloc(password, __FILE__, __LINE__);
@@ -276,22 +276,22 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1done(
 
 JNIEXPORT jstring JNICALL
 Java_eu_faircode_netguard_Util_jni_1getprop(JNIEnv *env, jclass type, jstring name_) {
-    const char *name = (*env)->GetStringUTFChars(env, name_, 0);
+    const char *name = env->GetStringUTFChars(name_, 0);
     ng_add_alloc(name, "name");
 
     char value[PROP_VALUE_MAX + 1] = "";
     __system_property_get(name, value);
 
-    (*env)->ReleaseStringUTFChars(env, name_, name);
+    env->ReleaseStringUTFChars(name_, name);
     ng_delete_alloc(name, __FILE__, __LINE__);
 
-    return (*env)->NewStringUTF(env, value); // Freed by Java
+    return env->NewStringUTF(value); // Freed by Java
 }
 
 JNIEXPORT jboolean JNICALL
 Java_eu_faircode_netguard_Util_is_1numeric_1address(JNIEnv *env, jclass type, jstring ip_) {
     jboolean numeric = 0;
-    const char *ip = (*env)->GetStringUTFChars(env, ip_, 0);
+    const char *ip = env->GetStringUTFChars(ip_, 0);
     ng_add_alloc(ip, "ip");
 
     struct addrinfo hints;
@@ -308,7 +308,7 @@ Java_eu_faircode_netguard_Util_is_1numeric_1address(JNIEnv *env, jclass type, js
     if (result != NULL)
         freeaddrinfo(result);
 
-    (*env)->ReleaseStringUTFChars(env, ip_, ip);
+    env->ReleaseStringUTFChars(ip_, ip);
     ng_delete_alloc(ip, __FILE__, __LINE__);
     return numeric;
 }

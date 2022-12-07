@@ -57,25 +57,25 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load");
 
     JNIEnv *env;
-    if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK) {
+    if (vm->GetEnv((void **) &env, JNI_VERSION_1_6) != JNI_OK) {
         log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load GetEnv failed");
         return -1;
     }
 
     const char *packet = "com/duckduckgo/vpn/network/impl/models/Packet";
-    clsPacket = jniGlobalRef(env, jniFindClass(env, packet));
+    clsPacket = (jclass) jniGlobalRef(env, jniFindClass(env, packet));
     ng_add_alloc(clsPacket, "clsPacket");
 
     const char *allowed = "com/duckduckgo/vpn/network/impl/models/Allowed";
-    clsAllowed = jniGlobalRef(env, jniFindClass(env, allowed));
+    clsAllowed = (jclass) jniGlobalRef(env, jniFindClass(env, allowed));
     ng_add_alloc(clsAllowed, "clsAllowed");
 
     const char *rr = "com/duckduckgo/vpn/network/impl/models/ResourceRecord";
-    clsRR = jniGlobalRef(env, jniFindClass(env, rr));
+    clsRR = (jclass) jniGlobalRef(env, jniFindClass(env, rr));
     ng_add_alloc(clsRR, "clsRR");
 
     const char *usage = "com/duckduckgo/vpn/network/impl/models/Usage";
-    clsUsage = jniGlobalRef(env, jniFindClass(env, usage));
+    clsUsage = (jclass) jniGlobalRef(env, jniFindClass(env, usage));
     ng_add_alloc(clsUsage, "clsUsage");
 
     // Raise file number limit to maximum
@@ -98,13 +98,13 @@ void JNI_OnUnload(JavaVM *vm, void *reserved) {
     log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI unload");
 
     JNIEnv *env;
-    if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK)
+    if (vm->GetEnv((void **) &env, JNI_VERSION_1_6) != JNI_OK)
         log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load GetEnv failed");
     else {
-        (*env)->DeleteGlobalRef(env, clsPacket);
-        (*env)->DeleteGlobalRef(env, clsAllowed);
-        (*env)->DeleteGlobalRef(env, clsRR);
-        (*env)->DeleteGlobalRef(env, clsUsage);
+        env->DeleteGlobalRef(clsPacket);
+        env->DeleteGlobalRef(clsAllowed);
+        env->DeleteGlobalRef(clsRR);
+        env->DeleteGlobalRef(clsUsage);
         ng_delete_alloc(clsPacket, __FILE__, __LINE__);
         ng_delete_alloc(clsAllowed, __FILE__, __LINE__);
         ng_delete_alloc(clsRR, __FILE__, __LINE__);
@@ -113,7 +113,7 @@ void JNI_OnUnload(JavaVM *vm, void *reserved) {
 }
 
 void report_exit(const struct arguments *args, const char *fmt, ...) {
-    jclass cls = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass cls = args->env->GetObjectClass(args->instance);
     ng_add_alloc(cls, "cls");
     jmethodID mid = jniGetMethodID(args->env, cls, "nativeExit", "(Ljava/lang/String;)V");
 
@@ -123,24 +123,24 @@ void report_exit(const struct arguments *args, const char *fmt, ...) {
         va_list argptr;
         va_start(argptr, fmt);
         vsprintf(line, fmt, argptr);
-        jreason = (*args->env)->NewStringUTF(args->env, line);
+        jreason = args->env->NewStringUTF(line);
         ng_add_alloc(jreason, "jreason");
         va_end(argptr);
     }
 
-    (*args->env)->CallVoidMethod(args->env, args->instance, mid, jreason);
+    args->env->CallVoidMethod(args->instance, mid, jreason);
     jniCheckException(args->env);
 
     if (jreason != NULL) {
-        (*args->env)->DeleteLocalRef(args->env, jreason);
+        args->env->DeleteLocalRef(jreason);
         ng_delete_alloc(jreason, __FILE__, __LINE__);
     }
-    (*args->env)->DeleteLocalRef(args->env, cls);
+    args->env->DeleteLocalRef(cls);
     ng_delete_alloc(cls, __FILE__, __LINE__);
 }
 
 void report_error(const struct arguments *args, jint error, const char *fmt, ...) {
-    jclass cls = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass cls = args->env->GetObjectClass(args->instance);
     ng_add_alloc(cls, "cls");
     jmethodID mid = jniGetMethodID(args->env, cls, "nativeError", "(ILjava/lang/String;)V");
 
@@ -150,19 +150,19 @@ void report_error(const struct arguments *args, jint error, const char *fmt, ...
         va_list argptr;
         va_start(argptr, fmt);
         vsprintf(line, fmt, argptr);
-        jreason = (*args->env)->NewStringUTF(args->env, line);
+        jreason = args->env->NewStringUTF(line);
         ng_add_alloc(jreason, "jreason");
         va_end(argptr);
     }
 
-    (*args->env)->CallVoidMethod(args->env, args->instance, mid, error, jreason);
+    args->env->CallVoidMethod(args->instance, mid, error, jreason);
     jniCheckException(args->env);
 
     if (jreason != NULL) {
-        (*args->env)->DeleteLocalRef(args->env, jreason);
+        args->env->DeleteLocalRef(jreason);
         ng_delete_alloc(jreason, __FILE__, __LINE__);
     }
-    (*args->env)->DeleteLocalRef(args->env, cls);
+    args->env->DeleteLocalRef(cls);
     ng_delete_alloc(cls, __FILE__, __LINE__);
 }
 
@@ -173,7 +173,7 @@ int protect_socket(const struct arguments *args, int socket) {
     if (args->ctx->sdk >= 21)
         return 0;
 
-    jclass cls = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass cls = args->env->GetObjectClass(args->instance);
     ng_add_alloc(cls, "cls");
     if (cls == NULL) {
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "protect socket failed to get class");
@@ -187,8 +187,7 @@ int protect_socket(const struct arguments *args, int socket) {
         return -1;
     }
 
-    jboolean isProtected = (*args->env)->CallBooleanMethod(
-            args->env, args->instance, midProtect, socket);
+    jboolean isProtected = args->env->CallBooleanMethod(args->instance, midProtect, socket);
     jniCheckException(args->env);
 
     if (!isProtected) {
@@ -196,7 +195,7 @@ int protect_socket(const struct arguments *args, int socket) {
         return -1;
     }
 
-    (*args->env)->DeleteLocalRef(args->env, cls);
+    args->env->DeleteLocalRef(cls);
     ng_delete_alloc(cls, __FILE__, __LINE__);
 
     return 0;
@@ -206,14 +205,14 @@ int protect_socket(const struct arguments *args, int socket) {
 // http://journals.ecs.soton.ac.uk/java/tutorial/native1.1/implementing/index.html
 
 jobject jniGlobalRef(JNIEnv *env, jobject cls) {
-    jobject gcls = (*env)->NewGlobalRef(env, cls);
+    jobject gcls = env->NewGlobalRef(cls);
     if (gcls == NULL)
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "Global ref failed (out of memory?)");
     return gcls;
 }
 
 jclass jniFindClass(JNIEnv *env, const char *name) {
-    jclass cls = (*env)->FindClass(env, name);
+    jclass cls = env->FindClass(name);
     if (cls == NULL)
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "Class %s not found", name);
     else
@@ -222,7 +221,7 @@ jclass jniFindClass(JNIEnv *env, const char *name) {
 }
 
 jmethodID jniGetMethodID(JNIEnv *env, jclass cls, const char *name, const char *signature) {
-    jmethodID method = (*env)->GetMethodID(env, cls, name, signature);
+    jmethodID method = env->GetMethodID(cls, name, signature);
     if (method == NULL) {
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "Method %s %s not found", name, signature);
         jniCheckException(env);
@@ -231,14 +230,14 @@ jmethodID jniGetMethodID(JNIEnv *env, jclass cls, const char *name, const char *
 }
 
 jfieldID jniGetFieldID(JNIEnv *env, jclass cls, const char *name, const char *type) {
-    jfieldID field = (*env)->GetFieldID(env, cls, name, type);
+    jfieldID field = env->GetFieldID(cls, name, type);
     if (field == NULL)
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "Field %s type %s not found", name, type);
     return field;
 }
 
 jobject jniNewObject(JNIEnv *env, jclass cls, jmethodID constructor, const char *name) {
-    jobject object = (*env)->NewObject(env, cls, constructor);
+    jobject object = env->NewObject(cls, constructor);
     if (object == NULL)
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "Create object %s failed", name);
     else
@@ -247,11 +246,11 @@ jobject jniNewObject(JNIEnv *env, jclass cls, jmethodID constructor, const char 
 }
 
 int jniCheckException(JNIEnv *env) {
-    jthrowable ex = (*env)->ExceptionOccurred(env);
+    jthrowable ex = env->ExceptionOccurred();
     if (ex) {
-        (*env)->ExceptionDescribe(env);
-        (*env)->ExceptionClear(env);
-        (*env)->DeleteLocalRef(env, ex);
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        env->DeleteLocalRef(ex);
         ng_delete_alloc(ex, __FILE__, __LINE__);
         return 1;
     }
@@ -281,18 +280,18 @@ void log_packet(const struct arguments *args, const packet_t *packet) {
         packet->allowed
     );
 
-    jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass clsService = args->env->GetObjectClass(args->instance);
     ng_add_alloc(clsService, "clsService");
 
     const char *signature = "(Lcom/duckduckgo/vpn/network/impl/models/Packet;)V";
     if (midLogPacket == NULL)
         midLogPacket = jniGetMethodID(args->env, clsService, "logPacket", signature);
 
-    (*args->env)->CallVoidMethod(args->env, args->instance, midLogPacket, jpacket);
+    args->env->CallVoidMethod(args->instance, midLogPacket, jpacket);
     jniCheckException(args->env);
 
-    (*args->env)->DeleteLocalRef(args->env, clsService);
-    (*args->env)->DeleteLocalRef(args->env, jpacket);
+    args->env->DeleteLocalRef(clsService);
+    args->env->DeleteLocalRef(jpacket);
     ng_delete_alloc(clsService, __FILE__, __LINE__);
     ng_delete_alloc(jpacket, __FILE__, __LINE__);
 
@@ -321,7 +320,7 @@ void dns_resolved(const struct arguments *args,
     gettimeofday(&start, NULL);
 #endif
 
-    jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass clsService = args->env->GetObjectClass(args->instance);
     ng_add_alloc(clsService, "clsService");
 
     const char *signature = "(Lcom/duckduckgo/vpn/network/impl/models/ResourceRecord;)V";
@@ -345,27 +344,27 @@ void dns_resolved(const struct arguments *args,
     }
 
     jlong jtime = time(NULL) * 1000LL;
-    jstring jqname = (*args->env)->NewStringUTF(args->env, qname);
-    jstring janame = (*args->env)->NewStringUTF(args->env, aname);
-    jstring jresource = (*args->env)->NewStringUTF(args->env, resource);
+    jstring jqname = args->env->NewStringUTF(qname);
+    jstring janame = args->env->NewStringUTF(aname);
+    jstring jresource = args->env->NewStringUTF(resource);
     ng_add_alloc(jqname, "jqname");
     ng_add_alloc(janame, "janame");
     ng_add_alloc(jresource, "jresource");
 
-    (*args->env)->SetLongField(args->env, jrr, fidQTime, jtime);
-    (*args->env)->SetObjectField(args->env, jrr, fidQName, jqname);
-    (*args->env)->SetObjectField(args->env, jrr, fidAName, janame);
-    (*args->env)->SetObjectField(args->env, jrr, fidResource, jresource);
-    (*args->env)->SetIntField(args->env, jrr, fidTTL, ttl);
+    args->env->SetLongField(jrr, fidQTime, jtime);
+    args->env->SetObjectField(jrr, fidQName, jqname);
+    args->env->SetObjectField(jrr, fidAName, janame);
+    args->env->SetObjectField(jrr, fidResource, jresource);
+    args->env->SetIntField(jrr, fidTTL, ttl);
 
-    (*args->env)->CallVoidMethod(args->env, args->instance, midDnsResolved, jrr);
+    args->env->CallVoidMethod(args->instance, midDnsResolved, jrr);
     jniCheckException(args->env);
 
-    (*args->env)->DeleteLocalRef(args->env, jresource);
-    (*args->env)->DeleteLocalRef(args->env, janame);
-    (*args->env)->DeleteLocalRef(args->env, jqname);
-    (*args->env)->DeleteLocalRef(args->env, jrr);
-    (*args->env)->DeleteLocalRef(args->env, clsService);
+    args->env->DeleteLocalRef(jresource);
+    args->env->DeleteLocalRef(janame);
+    args->env->DeleteLocalRef(jqname);
+    args->env->DeleteLocalRef(jrr);
+    args->env->DeleteLocalRef(clsService);
     ng_delete_alloc(jresource, __FILE__, __LINE__);
     ng_delete_alloc(janame, __FILE__, __LINE__);
     ng_delete_alloc(jqname, __FILE__, __LINE__);
@@ -390,22 +389,21 @@ jboolean is_domain_blocked(const struct arguments *args, const char *name, jint 
     gettimeofday(&start, NULL);
 #endif
 
-    jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass clsService = args->env->GetObjectClass(args->instance);
     ng_add_alloc(clsService, "clsService");
 
     const char *signature = "(Ljava/lang/String;I)Z";
     if (midIsDomainBlocked == NULL)
         midIsDomainBlocked = jniGetMethodID(args->env, clsService, "isDomainBlocked", signature);
 
-    jstring jname = (*args->env)->NewStringUTF(args->env, name);
+    jstring jname = args->env->NewStringUTF(name);
     ng_add_alloc(jname, "jname");
 
-    jboolean jallowed = (*args->env)->CallBooleanMethod(
-            args->env, args->instance, midIsDomainBlocked, jname, uid);
+    jboolean jallowed = args->env->CallBooleanMethod(args->instance, midIsDomainBlocked, jname, uid);
     jniCheckException(args->env);
 
-    (*args->env)->DeleteLocalRef(args->env, jname);
-    (*args->env)->DeleteLocalRef(args->env, clsService);
+    args->env->DeleteLocalRef(jname);
+    args->env->DeleteLocalRef(clsService);
     ng_delete_alloc(jname, __FILE__, __LINE__);
     ng_delete_alloc(clsService, __FILE__, __LINE__);
 
@@ -432,26 +430,26 @@ jint get_uid_q(const struct arguments *args,
     gettimeofday(&start, NULL);
 #endif
 
-    jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass clsService = args->env->GetObjectClass(args->instance);
     ng_add_alloc(clsService, "clsService");
 
     const char *signature = "(IILjava/lang/String;ILjava/lang/String;I)I";
     if (midGetUidQ == NULL)
         midGetUidQ = jniGetMethodID(args->env, clsService, "getUidQ", signature);
 
-    jstring jsource = (*args->env)->NewStringUTF(args->env, source);
-    jstring jdest = (*args->env)->NewStringUTF(args->env, dest);
+    jstring jsource = args->env->NewStringUTF(source);
+    jstring jdest = args->env->NewStringUTF(dest);
     ng_add_alloc(jsource, "jsource");
     ng_add_alloc(jdest, "jdest");
 
-    jint juid = (*args->env)->CallIntMethod(
-            args->env, args->instance, midGetUidQ,
+    jint juid = args->env->CallIntMethod(
+            args->instance, midGetUidQ,
             version, protocol, jsource, sport, jdest, dport);
     jniCheckException(args->env);
 
-    (*args->env)->DeleteLocalRef(args->env, jdest);
-    (*args->env)->DeleteLocalRef(args->env, jsource);
-    (*args->env)->DeleteLocalRef(args->env, clsService);
+    args->env->DeleteLocalRef(jdest);
+    args->env->DeleteLocalRef(jsource);
+    args->env->DeleteLocalRef(clsService);
     ng_delete_alloc(jdest, __FILE__, __LINE__);
     ng_delete_alloc(jsource, __FILE__, __LINE__);
     ng_delete_alloc(clsService, __FILE__, __LINE__);
@@ -493,15 +491,14 @@ struct allowed *is_address_allowed(const struct arguments *args, const packet_t 
         packet->allowed
     );
 
-    jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass clsService = args->env->GetObjectClass(args->instance);
     ng_add_alloc(clsService, "clsService");
 
     const char *signature = "(Lcom/duckduckgo/vpn/network/impl/models/Packet;)Lcom/duckduckgo/vpn/network/impl/models/Allowed;";
     if (midIsAddressAllowed == NULL)
         midIsAddressAllowed = jniGetMethodID(args->env, clsService, "isAddressAllowed", signature);
 
-    jobject jallowed = (*args->env)->CallObjectMethod(
-            args->env, args->instance, midIsAddressAllowed, jpacket);
+    jobject jallowed = args->env->CallObjectMethod(args->instance, midIsAddressAllowed, jpacket);
     ng_add_alloc(jallowed, "jallowed");
     jniCheckException(args->env);
 
@@ -512,27 +509,27 @@ struct allowed *is_address_allowed(const struct arguments *args, const packet_t 
             fidRport = jniGetFieldID(args->env, clsAllowed, "rport", "I");
         }
 
-        jstring jraddr = (*args->env)->GetObjectField(args->env, jallowed, fidRaddr);
+        jstring jraddr = (jstring) args->env->GetObjectField(jallowed, fidRaddr);
         ng_add_alloc(jraddr, "jraddr");
         if (jraddr == NULL)
             *allowed.raddr = 0;
         else {
-            const char *raddr = (*args->env)->GetStringUTFChars(args->env, jraddr, NULL);
+            const char *raddr = args->env->GetStringUTFChars(jraddr, NULL);
             ng_add_alloc(raddr, "raddr");
             strcpy(allowed.raddr, raddr);
-            (*args->env)->ReleaseStringUTFChars(args->env, jraddr, raddr);
+            args->env->ReleaseStringUTFChars(jraddr, raddr);
             ng_delete_alloc(raddr, __FILE__, __LINE__);
         }
-        allowed.rport = (uint16_t) (*args->env)->GetIntField(args->env, jallowed, fidRport);
+        allowed.rport = (uint16_t) args->env->GetIntField(jallowed, fidRport);
 
-        (*args->env)->DeleteLocalRef(args->env, jraddr);
+        args->env->DeleteLocalRef(jraddr);
         ng_delete_alloc(jraddr, __FILE__, __LINE__);
     }
 
 
-    (*args->env)->DeleteLocalRef(args->env, jpacket);
-    (*args->env)->DeleteLocalRef(args->env, clsService);
-    (*args->env)->DeleteLocalRef(args->env, jallowed);
+    args->env->DeleteLocalRef(jpacket);
+    args->env->DeleteLocalRef(clsService);
+    args->env->DeleteLocalRef(jallowed);
     ng_delete_alloc(jpacket, __FILE__, __LINE__);
     ng_delete_alloc(clsService, __FILE__, __LINE__);
     ng_delete_alloc(jallowed, __FILE__, __LINE__);
@@ -589,7 +586,7 @@ jobject create_packet(const struct arguments *args,
 
     const char *packet = "com/duckduckgo/vpn/network/impl/models/Packet";
     if (midInitPacket == NULL)
-        midInitPacket = jniGetMethodID(env, clsPacket, "<init>", "()V");
+        midInitPacket = jniGetMethodID(args->env,  clsPacket, "<init>", "()V");
     jobject jpacket = jniNewObject(env, clsPacket, midInitPacket, packet);
     ng_add_alloc(jpacket, "jpacket");
 
@@ -611,31 +608,31 @@ jobject create_packet(const struct arguments *args,
     struct timeval tv;
     gettimeofday(&tv, NULL);
     jlong t = tv.tv_sec * 1000LL + tv.tv_usec / 1000;
-    jstring jflags = (*env)->NewStringUTF(env, flags);
-    jstring jsource = (*env)->NewStringUTF(env, source);
-    jstring jdest = (*env)->NewStringUTF(env, dest);
-    jstring jdata = (*env)->NewStringUTF(env, data);
+    jstring jflags = env->NewStringUTF(flags);
+    jstring jsource = env->NewStringUTF(source);
+    jstring jdest = env->NewStringUTF(dest);
+    jstring jdata = env->NewStringUTF(data);
     ng_add_alloc(jflags, "jflags");
     ng_add_alloc(jsource, "jsource");
     ng_add_alloc(jdest, "jdest");
     ng_add_alloc(jdata, "jdata");
 
-    (*env)->SetLongField(env, jpacket, fidTime, t);
-    (*env)->SetIntField(env, jpacket, fidVersion, version);
-    (*env)->SetIntField(env, jpacket, fidProtocol, protocol);
-    (*env)->SetObjectField(env, jpacket, fidFlags, jflags);
-    (*env)->SetObjectField(env, jpacket, fidSaddr, jsource);
-    (*env)->SetIntField(env, jpacket, fidSport, sport);
-    (*env)->SetObjectField(env, jpacket, fidDaddr, jdest);
-    (*env)->SetIntField(env, jpacket, fidDport, dport);
-    (*env)->SetObjectField(env, jpacket, fidData, jdata);
-    (*env)->SetIntField(env, jpacket, fidUid, uid);
-    (*env)->SetBooleanField(env, jpacket, fidAllowed, allowed);
+    env->SetLongField(jpacket, fidTime, t);
+    env->SetIntField(jpacket, fidVersion, version);
+    env->SetIntField(jpacket, fidProtocol, protocol);
+    env->SetObjectField(jpacket, fidFlags, jflags);
+    env->SetObjectField(jpacket, fidSaddr, jsource);
+    env->SetIntField(jpacket, fidSport, sport);
+    env->SetObjectField(jpacket, fidDaddr, jdest);
+    env->SetIntField(jpacket, fidDport, dport);
+    env->SetObjectField(jpacket, fidData, jdata);
+    env->SetIntField(jpacket, fidUid, uid);
+    env->SetBooleanField(jpacket, fidAllowed, allowed);
 
-    (*env)->DeleteLocalRef(env, jdata);
-    (*env)->DeleteLocalRef(env, jdest);
-    (*env)->DeleteLocalRef(env, jsource);
-    (*env)->DeleteLocalRef(env, jflags);
+    env->DeleteLocalRef(jdata);
+    env->DeleteLocalRef(jdest);
+    env->DeleteLocalRef(jsource);
+    env->DeleteLocalRef(jflags);
     ng_delete_alloc(jdata, __FILE__, __LINE__);
     ng_delete_alloc(jdest, __FILE__, __LINE__);
     ng_delete_alloc(jsource, __FILE__, __LINE__);
@@ -672,7 +669,7 @@ void account_usage(const struct arguments *args, uint32_t version, uint32_t prot
     gettimeofday(&start, NULL);
 #endif
 
-    jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
+    jclass clsService = args->env->GetObjectClass(args->instance);
     ng_add_alloc(clsService, "clsService");
 
     const char *signature = "(Lcom/duckduckgo/vpn/network/impl/models/Usage;)V";
@@ -699,24 +696,24 @@ void account_usage(const struct arguments *args, uint32_t version, uint32_t prot
     }
 
     jlong jtime = time(NULL) * 1000LL;
-    jstring jdaddr = (*args->env)->NewStringUTF(args->env, daddr);
+    jstring jdaddr = args->env->NewStringUTF(daddr);
     ng_add_alloc(jdaddr, "jdaddr");
 
-    (*args->env)->SetLongField(args->env, jusage, fidUsageTime, jtime);
-    (*args->env)->SetIntField(args->env, jusage, fidUsageVersion, version);
-    (*args->env)->SetIntField(args->env, jusage, fidUsageProtocol, protocol);
-    (*args->env)->SetObjectField(args->env, jusage, fidUsageDAddr, jdaddr);
-    (*args->env)->SetIntField(args->env, jusage, fidUsageDPort, dport);
-    (*args->env)->SetIntField(args->env, jusage, fidUsageUid, uid);
-    (*args->env)->SetLongField(args->env, jusage, fidUsageSent, sent);
-    (*args->env)->SetLongField(args->env, jusage, fidUsageReceived, received);
+    args->env->SetLongField(jusage, fidUsageTime, jtime);
+    args->env->SetIntField(jusage, fidUsageVersion, version);
+    args->env->SetIntField(jusage, fidUsageProtocol, protocol);
+    args->env->SetObjectField(jusage, fidUsageDAddr, jdaddr);
+    args->env->SetIntField(jusage, fidUsageDPort, dport);
+    args->env->SetIntField(jusage, fidUsageUid, uid);
+    args->env->SetLongField(jusage, fidUsageSent, sent);
+    args->env->SetLongField(jusage, fidUsageReceived, received);
 
-    (*args->env)->CallVoidMethod(args->env, args->instance, midAccountUsage, jusage);
+    args->env->CallVoidMethod(args->instance, midAccountUsage, jusage);
     jniCheckException(args->env);
 
-    (*args->env)->DeleteLocalRef(args->env, jdaddr);
-    (*args->env)->DeleteLocalRef(args->env, jusage);
-    (*args->env)->DeleteLocalRef(args->env, clsService);
+    args->env->DeleteLocalRef(jdaddr);
+    args->env->DeleteLocalRef(jusage);
+    args->env->DeleteLocalRef(clsService);
     ng_delete_alloc(jdaddr, __FILE__, __LINE__);
     ng_delete_alloc(jusage, __FILE__, __LINE__);
     ng_delete_alloc(clsService, __FILE__, __LINE__);

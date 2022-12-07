@@ -79,7 +79,7 @@ int check_tun(const struct arguments *args,
 
     // Check tun read
     if (ev->events & EPOLLIN) {
-        uint8_t *buffer = ng_malloc(get_mtu(), "tun read");
+        uint8_t *buffer = (uint8_t *) ng_malloc(get_mtu(), "tun read");
         ssize_t length = read(args->tun, buffer, get_mtu());
         if (length < 0) {
             ng_free(buffer, __FILE__, __LINE__);
@@ -449,7 +449,7 @@ jint get_uid_sub(const int version, const int protocol,
         }
 
     // Get proc file name
-    char *fn = NULL;
+    const char *fn = NULL;
     if (protocol == IPPROTO_ICMP && version == 4)
         fn = "/proc/net/icmp";
     else if (protocol == IPPROTO_ICMPV6 && version == 6)
@@ -519,9 +519,9 @@ jint get_uid_sub(const int version, const int protocol,
 
             if (c >= uid_cache_size) {
                 if (uid_cache_size == 0)
-                    uid_cache = ng_malloc(sizeof(struct uid_cache_entry), "uid_cache init");
+                    uid_cache = (struct uid_cache_entry *) ng_malloc(sizeof(struct uid_cache_entry), "uid_cache init");
                 else
-                    uid_cache = ng_realloc(uid_cache,
+                    uid_cache = (struct uid_cache_entry *) ng_realloc(uid_cache,
                                            sizeof(struct uid_cache_entry) *
                                            (uid_cache_size + 1), "uid_cache extend");
                 c = uid_cache_size;
