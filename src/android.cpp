@@ -23,6 +23,11 @@ int __sdk_int(JNIEnv *env) {
 // JNI RealVpnNetwork
 ////////////////////////////////////////////////////////////////////////////////
 
+// Needed to disable function name mangling
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 JNIEXPORT jlong JNICALL
 Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1init(
         JNIEnv *env, jobject instance, jint sdk) {
@@ -329,3 +334,7 @@ Java_eu_faircode_netguard_Util_dump_1memory_1profile(JNIEnv *env, jclass type) {
 
 #endif
 }
+
+#ifdef __cplusplus
+}
+#endif
