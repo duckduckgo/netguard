@@ -13,8 +13,6 @@ extern size_t pcap_record_size;
 extern long pcap_file_size;
 
 // defined in ip.c
-extern int uid_cache_size;
-extern struct uid_cache_entry *uid_cache;
 extern int max_tun_msg;
 
 // defined in socks.c
