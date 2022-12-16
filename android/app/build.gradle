@@ -5,8 +5,8 @@ plugins {
 
 apply plugin: 'maven-publish'
 
-def githubProperties = new Properties()
-githubProperties.load(new FileInputStream(rootProject.file("github.properties")))
+//def githubProperties = new Properties()
+//githubProperties.load(new FileInputStream(rootProject.file("github.properties")))
 
 // Place the version of your library here
 def getVersionName = { ->
@@ -38,17 +38,17 @@ publishing {
             artifact("$buildDir/outputs/aar/${getArtifactId()}.aar")
         }
     }
-    repositories {
-        maven {
-            name = "GitHubPackages"
-
-            url = uri(getGitHubUrl())
-            credentials {
-                username = githubProperties['gpr.usr'] ?: System.getenv("GPR_USER")
-                password = githubProperties['gpr.key'] ?: System.getenv("GPR_API_KEY")
-            }
-        }
-    }
+//    repositories {
+//        maven {
+//            name = "GitHubPackages"
+//
+//            url = uri(getGitHubUrl())
+//            credentials {
+//                username = githubProperties['gpr.usr'] ?: System.getenv("GPR_USER")
+//                password = githubProperties['gpr.key'] ?: System.getenv("GPR_API_KEY")
+//            }
+//        }
+//    }
 }
 
 
