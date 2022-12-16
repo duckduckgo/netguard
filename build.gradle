@@ -1,0 +1,4 @@
+allprojects {
+    group = 'com.duckduckgo.netguard'
+    version = '1.0'
+}
