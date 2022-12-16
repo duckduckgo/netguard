@@ -2,6 +2,7 @@
 #include <jni.h>
 
 #include "netguard.h"
+#include "uid_mapping.h"
 
 void __platform_log_print(int prio, const char *tag, const char *fmt, ...) {
     char line[1024];
@@ -262,10 +263,7 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1done(
         if (close(ctx->pipefds[i]))
             log_print(PLATFORM_LOG_PRIORITY_ERROR, "Close pipe error %d: %s", errno, strerror(errno));
 
-    if (uid_cache != NULL)
-        ng_free(uid_cache, __FILE__, __LINE__);
-    uid_cache_size = 0;
-    uid_cache = NULL;
+    cleanup_uid_cache();
 
     ng_free(ctx, __FILE__, __LINE__);
 }
