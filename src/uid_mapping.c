@@ -23,6 +23,8 @@ struct uid_cache_entry {
 static int uid_cache_size = 0;
 static struct uid_cache_entry *uid_cache = NULL;
 
+///////////////////////////////////////////////////////////////////////////////
+
 void cleanup_uid_cache() {
     if (uid_cache != NULL)
         ng_free(uid_cache, __FILE__, __LINE__);
