@@ -1,0 +1,93 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+}
+
+apply plugin: 'maven-publish'
+
+//def githubProperties = new Properties()
+//githubProperties.load(new FileInputStream(rootProject.file("github.properties")))
+
+// Place the version of your library here
+def getVersionName = { ->
+    return "1.0.0"
+}
+
+// Add the name of your library here
+def getArtifactId = { ->
+    return "ddg-android-netguard-release"
+}
+
+// Add the group ID of your library here
+def getGroupId = { ->
+    return "com.duckduckgo.mobile.android"
+}
+
+// Prepare URL of maven package.
+def getGitHubUrl = { ->
+    return "https://maven.pkg.github.com/duckduckgo/netguard"
+}
+
+publishing {
+    publications {
+        bar(MavenPublication) {
+            groupId getGroupId()
+            artifactId getArtifactId()
+            version getVersionName()
+            // Place the path of your artifact here
+            artifact("$buildDir/outputs/aar/${getArtifactId()}.aar")
+        }
+    }
+//    repositories {
+//        maven {
+//            name = "GitHubPackages"
+//
+//            url = uri(getGitHubUrl())
+//            credentials {
+//                username = githubProperties['gpr.usr'] ?: System.getenv("GPR_USER")
+//                password = githubProperties['gpr.key'] ?: System.getenv("GPR_API_KEY")
+//            }
+//        }
+//    }
+}
+
+
+android {
+    compileSdk 32
+
+    defaultConfig {
+        minSdk 23
+        targetSdk 32
+        versionCode 1
+        versionName "1.0.0"
+        project.archivesBaseName = "ddg-android-netguard"
+        setProperty("archivesBaseName", "${archivesBaseName}")
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        externalNativeBuild {
+            cmake {
+                cppFlags ''
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.18.1'
+        }
+    }
+}
