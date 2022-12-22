@@ -13,4 +13,4 @@ dependencyResolutionManagement {
     }
 }
 rootProject.name = "netguard-android"
-include ':app'
+include ':netguard'
