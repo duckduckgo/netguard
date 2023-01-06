@@ -62,6 +62,7 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags ''
+                arguments '-DANDROID_STL=c++_shared'
             }
         }
     }
@@ -73,7 +74,8 @@ android {
         }
     }
     buildFeatures {
-        prefabPublishing = true
+        prefab true
+        prefabPublishing true
     }
     prefab {
         create("netguard") {

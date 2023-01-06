@@ -54,6 +54,8 @@ jclass clsRR;
 jclass clsUsage;
 
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
+
+#ifdef IS_ANDROID_TEST
     log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load");
 
     JNIEnv *env;
@@ -77,6 +79,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     const char *usage = "com/duckduckgo/vpn/network/impl/models/Usage";
     clsUsage = jniGlobalRef(env, jniFindClass(env, usage));
     ng_add_alloc(clsUsage, "clsUsage");
+#endif
 
     // Raise file number limit to maximum
     struct rlimit rlim;
