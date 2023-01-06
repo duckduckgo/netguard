@@ -31,6 +31,7 @@ add_library( netguard
              ../../../../../src/util.c
              ../../../../../src/android.c
              ../../../../../src/uid_mapping.c
+             ../../../../../src/test_wrapper.c
              )
 
 include_directories( ../../../../../src/include )
