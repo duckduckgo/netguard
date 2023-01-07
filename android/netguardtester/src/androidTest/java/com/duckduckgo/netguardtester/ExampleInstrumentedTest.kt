@@ -22,7 +22,6 @@ class ExampleInstrumentedTest {
         assertEquals("com.duckduckgo.netguardtester", appContext.packageName)
 
         val testee = NetguardInterface()
-        val s = testee.testWrapper()
-        assertEquals("hello", s)
+        assertEquals(false, testee.testx())
     }
 }
