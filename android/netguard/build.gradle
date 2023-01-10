@@ -79,7 +79,8 @@ android {
         }
     }
     buildFeatures {
-        prefabPublishing = true
+        prefab true
+        prefabPublishing true
     }
     prefab {
         create("netguard") {

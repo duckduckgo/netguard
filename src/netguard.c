@@ -54,42 +54,44 @@ jclass clsRR;
 jclass clsUsage;
 
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
-    log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load");
+// TODO: ifdef or remove all this?
 
-    JNIEnv *env;
-    if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK) {
-        log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load GetEnv failed");
-        return -1;
-    }
+    // log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load");
 
-    const char *packet = "com/duckduckgo/vpn/network/impl/models/Packet";
-    clsPacket = jniGlobalRef(env, jniFindClass(env, packet));
-    ng_add_alloc(clsPacket, "clsPacket");
+    // JNIEnv *env;
+    // if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK) {
+    //     log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load GetEnv failed");
+    //     return -1;
+    // }
 
-    const char *allowed = "com/duckduckgo/vpn/network/impl/models/Allowed";
-    clsAllowed = jniGlobalRef(env, jniFindClass(env, allowed));
-    ng_add_alloc(clsAllowed, "clsAllowed");
+    // const char *packet = "com/duckduckgo/vpn/network/impl/models/Packet";
+    // clsPacket = jniGlobalRef(env, jniFindClass(env, packet));
+    // ng_add_alloc(clsPacket, "clsPacket");
 
-    const char *rr = "com/duckduckgo/vpn/network/impl/models/ResourceRecord";
-    clsRR = jniGlobalRef(env, jniFindClass(env, rr));
-    ng_add_alloc(clsRR, "clsRR");
+    // const char *allowed = "com/duckduckgo/vpn/network/impl/models/Allowed";
+    // clsAllowed = jniGlobalRef(env, jniFindClass(env, allowed));
+    // ng_add_alloc(clsAllowed, "clsAllowed");
 
-    const char *usage = "com/duckduckgo/vpn/network/impl/models/Usage";
-    clsUsage = jniGlobalRef(env, jniFindClass(env, usage));
-    ng_add_alloc(clsUsage, "clsUsage");
+    // const char *rr = "com/duckduckgo/vpn/network/impl/models/ResourceRecord";
+    // clsRR = jniGlobalRef(env, jniFindClass(env, rr));
+    // ng_add_alloc(clsRR, "clsRR");
 
-    // Raise file number limit to maximum
-    struct rlimit rlim;
-    if (getrlimit(RLIMIT_NOFILE, &rlim))
-        log_print(PLATFORM_LOG_PRIORITY_WARN, "getrlimit error %d: %s", errno, strerror(errno));
-    else {
-        rlim_t soft = rlim.rlim_cur;
-        rlim.rlim_cur = rlim.rlim_max;
-        if (setrlimit(RLIMIT_NOFILE, &rlim))
-            log_print(PLATFORM_LOG_PRIORITY_WARN, "setrlimit error %d: %s", errno, strerror(errno));
-        else
-            log_print(PLATFORM_LOG_PRIORITY_WARN, "raised file limit from %d to %d", soft, rlim.rlim_cur);
-    }
+    // const char *usage = "com/duckduckgo/vpn/network/impl/models/Usage";
+    // clsUsage = jniGlobalRef(env, jniFindClass(env, usage));
+    // ng_add_alloc(clsUsage, "clsUsage");
+
+    // // Raise file number limit to maximum
+    // struct rlimit rlim;
+    // if (getrlimit(RLIMIT_NOFILE, &rlim))
+    //     log_print(PLATFORM_LOG_PRIORITY_WARN, "getrlimit error %d: %s", errno, strerror(errno));
+    // else {
+    //     rlim_t soft = rlim.rlim_cur;
+    //     rlim.rlim_cur = rlim.rlim_max;
+    //     if (setrlimit(RLIMIT_NOFILE, &rlim))
+    //         log_print(PLATFORM_LOG_PRIORITY_WARN, "setrlimit error %d: %s", errno, strerror(errno)); // TODO: check if this works/needed
+    //     else
+    //         log_print(PLATFORM_LOG_PRIORITY_WARN, "raised file limit from %d to %d", soft, rlim.rlim_cur);
+    // }
 
     return JNI_VERSION_1_6;
 }
