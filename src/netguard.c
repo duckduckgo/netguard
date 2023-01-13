@@ -54,9 +54,7 @@ jclass clsRR;
 jclass clsUsage;
 
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
-
-#ifdef IS_ANDROID_TEST
-    log_print(PLATFORM_LOG_PRIORITY_INFO, "JNI load");
+    log_print(PLATFORM_LOG_PRIORITY_WARN, "JNI load xxxx");
 
     JNIEnv *env;
     if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK) {
@@ -64,22 +62,21 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
         return -1;
     }
 
-    const char *packet = "com/duckduckgo/vpn/network/impl/models/Packet";
+    const char *packet = "com/duckduckgo/netguard/network/models/Packet";
     clsPacket = jniGlobalRef(env, jniFindClass(env, packet));
     ng_add_alloc(clsPacket, "clsPacket");
 
-    const char *allowed = "com/duckduckgo/vpn/network/impl/models/Allowed";
+    const char *allowed = "com/duckduckgo/netguard/network/models/Allowed";
     clsAllowed = jniGlobalRef(env, jniFindClass(env, allowed));
     ng_add_alloc(clsAllowed, "clsAllowed");
 
-    const char *rr = "com/duckduckgo/vpn/network/impl/models/ResourceRecord";
+    const char *rr = "com/duckduckgo/netguard/network/models/ResourceRecord";
     clsRR = jniGlobalRef(env, jniFindClass(env, rr));
     ng_add_alloc(clsRR, "clsRR");
 
-    const char *usage = "com/duckduckgo/vpn/network/impl/models/Usage";
+    const char *usage = "com/duckduckgo/netguard/network/models/Usage";
     clsUsage = jniGlobalRef(env, jniFindClass(env, usage));
     ng_add_alloc(clsUsage, "clsUsage");
-#endif
 
     // Raise file number limit to maximum
     struct rlimit rlim;
@@ -287,7 +284,7 @@ void log_packet(const struct arguments *args, const packet_t *packet) {
     jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
     ng_add_alloc(clsService, "clsService");
 
-    const char *signature = "(Lcom/duckduckgo/vpn/network/impl/models/Packet;)V";
+    const char *signature = "(Lcom/duckduckgo/netguard/network/models/Packet;)V";
     if (midLogPacket == NULL)
         midLogPacket = jniGetMethodID(args->env, clsService, "logPacket", signature);
 
@@ -327,11 +324,11 @@ void dns_resolved(const struct arguments *args,
     jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
     ng_add_alloc(clsService, "clsService");
 
-    const char *signature = "(Lcom/duckduckgo/vpn/network/impl/models/ResourceRecord;)V";
+    const char *signature = "(Lcom/duckduckgo/netguard/network/models/ResourceRecord;)V";
     if (midDnsResolved == NULL)
         midDnsResolved = jniGetMethodID(args->env, clsService, "dnsResolved", signature);
 
-    const char *rr = "com/duckduckgo/vpn/network/impl/models/ResourceRecord";
+    const char *rr = "com/duckduckgo/netguard/network/models/ResourceRecord";
     if (midInitRR == NULL)
         midInitRR = jniGetMethodID(args->env, clsRR, "<init>", "()V");
 
@@ -499,7 +496,7 @@ struct allowed *is_address_allowed(const struct arguments *args, const packet_t 
     jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
     ng_add_alloc(clsService, "clsService");
 
-    const char *signature = "(Lcom/duckduckgo/vpn/network/impl/models/Packet;)Lcom/duckduckgo/vpn/network/impl/models/Allowed;";
+    const char *signature = "(Lcom/duckduckgo/netguard/network/models/Packet;)Lcom/duckduckgo/netguard/network/models/Allowed;";
     if (midIsAddressAllowed == NULL)
         midIsAddressAllowed = jniGetMethodID(args->env, clsService, "isAddressAllowed", signature);
 
@@ -590,7 +587,7 @@ jobject create_packet(const struct arguments *args,
         env->SetByteArrayRegion (ret, 0, 3, b);
      */
 
-    const char *packet = "com/duckduckgo/vpn/network/impl/models/Packet";
+    const char *packet = "com/duckduckgo/netguard/network/models/Packet";
     if (midInitPacket == NULL)
         midInitPacket = jniGetMethodID(env, clsPacket, "<init>", "()V");
     jobject jpacket = jniNewObject(env, clsPacket, midInitPacket, packet);
@@ -678,11 +675,11 @@ void account_usage(const struct arguments *args, uint32_t version, uint32_t prot
     jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
     ng_add_alloc(clsService, "clsService");
 
-    const char *signature = "(Lcom/duckduckgo/vpn/network/impl/models/Usage;)V";
+    const char *signature = "(Lcom/duckduckgo/netguard/network/models/Usage;)V";
     if (midAccountUsage == NULL)
         midAccountUsage = jniGetMethodID(args->env, clsService, "accountUsage", signature);
 
-    const char *usage = "com/duckduckgo/vpn/network/impl/models/Usage";
+    const char *usage = "com/duckduckgo/netguard/network/models/Usage";
     if (midInitUsage == NULL)
         midInitUsage = jniGetMethodID(args->env, clsUsage, "<init>", "()V");
 

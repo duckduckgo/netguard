@@ -31,4 +31,9 @@ class UtilTest {
         buffer.put(invalidBytes)
         assertFalse(netguard.isValidUtf8(buffer))
     }
+
+    @Test
+    fun isKotlinLoaded() {
+        assertFalse(netguard.testPacket())
+    }
 }
