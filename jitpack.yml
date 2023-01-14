@@ -1,6 +1,0 @@
-jdk:
-  - openjdk11
-install:
-   - echo "Running a custom install command"
-   - cd android
-   - ./gradlew clean assemble publishBarPublicationToMavenLocal
