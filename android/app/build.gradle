@@ -14,7 +14,7 @@ import com.vanniktech.maven.publish.SonatypeHost
 
 mavenPublishing {
     // publishing to https://s01.oss.sonatype.org
-    publishToMavenCentral(SonatypeHost.S01)
+    publishToMavenCentral(SonatypeHost.S01, true)
 
     signAllPublications()
 
