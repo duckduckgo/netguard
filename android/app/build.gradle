@@ -1,56 +1,51 @@
 plugins {
     id 'com.android.library'
     id 'org.jetbrains.kotlin.android'
+    id "com.vanniktech.maven.publish" version "0.23.1"
 }
 
-apply plugin: 'maven-publish'
+//apply plugin: 'maven-publish'
 
-//def githubProperties = new Properties()
-//githubProperties.load(new FileInputStream(rootProject.file("github.properties")))
-
-// Place the version of your library here
 def getVersionName = { ->
-    return "1.0.0"
+    return getProperty("VERSION_NAME")
 }
 
-// Add the name of your library here
-def getArtifactId = { ->
-    return "ddg-android-netguard-release"
-}
+import com.vanniktech.maven.publish.SonatypeHost
 
-// Add the group ID of your library here
-def getGroupId = { ->
-    return "com.duckduckgo.mobile.android"
-}
+mavenPublishing {
+    // publishing to https://s01.oss.sonatype.org
+    publishToMavenCentral(SonatypeHost.S01)
 
-// Prepare URL of maven package.
-def getGitHubUrl = { ->
-    return "https://maven.pkg.github.com/duckduckgo/netguard"
-}
+    signAllPublications()
 
-publishing {
-    publications {
-        bar(MavenPublication) {
-            groupId getGroupId()
-            artifactId getArtifactId()
-            version getVersionName()
-            // Place the path of your artifact here
-            artifact("$buildDir/outputs/aar/${getArtifactId()}.aar")
+    coordinates("com.duckduckgo.netguard", "netguard-android", "${getVersionName}")
+
+    pom {
+        name = "DDG Netguard"
+        description = "DuckDuckGo networking library."
+        inceptionYear = "2022"
+        url = "https://github.com/duckduckgo/netguard"
+        licenses {
+            license {
+                name = "GNU General Public License v.3"
+                url = "https://github.com/duckduckgo/netguard/blob/main/LICENSE"
+                distribution = "https://github.com/duckduckgo/netguard/blob/main/LICENSE"
+            }
+        }
+        developers {
+            developer {
+                id = "duckduckgo"
+                name = "DuckDuckGo"
+                url = "https://github.com/duckduckgo/"
+            }
+        }
+        scm {
+            url = "https://github.com/duckduckgo/netguard"
+            connection = "scm:git:git://github.com/duckduckgo/netguard.git"
+            developerConnection = "scm:git:ssh://git@github.com:duckduckgo/netguard.git"
         }
     }
-//    repositories {
-//        maven {
-//            name = "GitHubPackages"
-//
-//            url = uri(getGitHubUrl())
-//            credentials {
-//                username = githubProperties['gpr.usr'] ?: System.getenv("GPR_USER")
-//                password = githubProperties['gpr.key'] ?: System.getenv("GPR_API_KEY")
-//            }
-//        }
-//    }
 }
-
 
 android {
     compileSdk 32
@@ -60,7 +55,7 @@ android {
         targetSdk 32
         versionCode 1
         versionName "1.0.0"
-        project.archivesBaseName = "ddg-android-netguard"
+        project.archivesBaseName = "ddg-android-netguard-${getVersionName}"
         setProperty("archivesBaseName", "${archivesBaseName}")
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
