@@ -1,0 +1,153 @@
+# This file contains the fastlane.tools configuration
+# You can find the documentation at https://docs.fastlane.tools
+#
+# For a list of all available actions, check out
+#
+#     https://docs.fastlane.tools/actions
+#
+# For a list of all available plugins, check out
+#
+#     https://docs.fastlane.tools/plugins/available-plugins
+#
+
+# Uncomment the line if you want fastlane to automatically update itself
+# update_fastlane
+
+default_platform(:android)
+
+platform :android do
+    desc "Create new release"
+    lane :release do |options|
+        ensure_git_status_clean
+        ensure_git_branch( branch: 'main' )
+
+        options_release_number = options[:release_number]
+        options_next_dev_version = options[:next_dev_version]
+
+        newVersion = get_version_number(
+            release_number: options_release_number
+        )
+        nextSnapshot = get_next_development_version(
+            current_version: newVersion,
+            next_dev_version: options_next_dev_version
+        )
+
+
+        isInteractiveMode = options_release_number == nil
+
+        if !isInteractiveMode
+            UI.message("Release number: #{options_release_number}")
+        else
+            if UI.confirm("Creating release for version=#{newVersion}, next dev version=#{nextSnapshot}?\n")
+                if UI.confirm(text:"Are you sure you want to continue?")
+                    create_new_release(release_version: newVersion)
+                    prepare_next_development_version(next_dev_version: nextSnapshot)
+                else
+                    UI.error errorMessageCancelled
+                end
+            else
+                UI.error errorMessageCancelled
+            end
+        end
+
+    end
+
+    desc "Create new release"
+    lane :create_new_release do |options|
+        newVersion = options[:release_version]
+
+        set_version_number(newVersion: "#{newVersion}")
+
+        git_commit(
+            message: "Release #{newVersion}",
+            path: "*",
+            allow_nothing_to_commit: true,
+            skip_git_hooks: true
+        )
+
+        sh "git tag -a #{newVersion} -m '#{newVersion}'"
+        UI.header("#{newVersion} release successfully created. Commit info: #{last_git_commit}")
+
+        if UI.confirm(text:"Do you want to push the tags to the remote?")
+            push_to_git_remote(
+                remote: "origin",
+                tags: true
+            )
+        else
+            UI.error errorMessageCancelled
+        end
+    end
+
+    desc "Prepare next development version"
+    lane :prepare_next_development_version do |options|
+        nextSnapshot = options[:next_dev_version]
+
+        if nextSnapshot == ""
+            UI.user_error!("Next Snapshot Version is required")
+        end
+
+        set_version_number(nextSnapshot: "#{nextSnapshot}-SNAPSHOT")
+        git_commit(
+            message: "Prepare next development version.",
+            path: "*",
+            allow_nothing_to_commit: true,
+            skip_git_hooks: true
+        )
+        UI.header("#{nextSnapshot}-SNAPSHOT version successfully set. Commit info: #{last_git_commit}")
+
+        if UI.confirm(text:"Do you want to push changes to remote?")
+            push_to_git_remote(
+                remote: "origin",
+                tags: true
+            )
+        else
+            UI.error errorMessageCancelled
+        end
+    end
+
+    desc "Prompt for next development version"
+    private_lane :get_next_development_version do |options|
+        newVersion = options[:current_version]
+        nextVersion = options[:next_dev_version]
+        if nextVersion == nil
+            prompt(text: "Release Version will be 1.2.0. Enter Next Development Version:")
+        else
+            nextVersion
+        end
+    end
+
+    desc "Prompt for version number"
+    private_lane :get_version_number do |options|
+        release_number = options[:release_number]
+        snapshot_version = get_version_from_properties
+        if release_number == nil && snapshot_version == nil
+            prompt(text: "\nLast release was: #{last_git_tag}\nEnter New Version Number:")
+        elsif snapshot_version != nil
+            UI.message("Snapshot version: #{snapshot_version}")
+            snapshot_version
+        else
+            release_number
+        end
+    end
+
+    desc "Update version number"
+    private_lane :set_version_number do |options|
+        newVersion = options[:newVersion]
+
+        File.open('../version.properties', 'w') do |file|
+            file.write("VERSION_NAME=#{newVersion}")
+        end
+    end
+
+    desc "Get version from version properties"
+    private_lane :get_version_from_properties do |options|
+        version_name = File.read('../version.properties').match(/VERSION_NAME=(.*)/)[1]
+        version = version_name.split('-')[0]
+        if version == nil
+            last_git_tag
+        else
+            version
+        end
+    end
+
+end
