@@ -68,7 +68,7 @@ platform :android do
         sh "git tag -a #{newVersion} -m '#{newVersion}'"
         UI.header("#{newVersion} release successfully created. Commit info: #{last_git_commit}")
 
-        if UI.confirm(text:"Do you want to push the tags to the remote?")
+        if UI.confirm(text:"Are you ready to push the new tag and the updated version number to main?")
             push_to_git_remote(
                 remote: "origin",
                 tags: true
@@ -141,8 +141,7 @@ platform :android do
 
     desc "Get version from version properties"
     private_lane :get_version_from_properties do |options|
-        version_name = File.read('../version.properties').match(/VERSION_NAME=(.*)/)[1]
-        version = version_name.split('-')[0]
+        version = property_file_read(file: "version.properties")["VERSION_NAME"].split('-')[0]
         if version == nil
             last_git_tag
         else
