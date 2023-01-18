@@ -1,0 +1,106 @@
+plugins {
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.android'
+    id "com.vanniktech.maven.publish" version "0.23.1"
+}
+
+//apply plugin: 'maven-publish'
+
+def getVersionName = { ->
+    return getProperty("VERSION_NAME")
+}
+
+import com.vanniktech.maven.publish.SonatypeHost
+
+mavenPublishing {
+    // publishing to https://s01.oss.sonatype.org
+    publishToMavenCentral(SonatypeHost.S01, true)
+
+    signAllPublications()
+
+    coordinates("com.duckduckgo.netguard", "netguard-android", "${getVersionName}")
+
+    pom {
+        name = "DDG Netguard"
+        description = "DuckDuckGo networking library."
+        inceptionYear = "2022"
+        url = "https://github.com/duckduckgo/netguard"
+        licenses {
+            license {
+                name = "GNU General Public License v.3"
+                url = "https://github.com/duckduckgo/netguard/blob/main/LICENSE"
+                distribution = "https://github.com/duckduckgo/netguard/blob/main/LICENSE"
+            }
+        }
+        developers {
+            developer {
+                id = "duckduckgo"
+                name = "DuckDuckGo"
+                url = "https://github.com/duckduckgo/"
+            }
+        }
+        scm {
+            url = "https://github.com/duckduckgo/netguard"
+            connection = "scm:git:git://github.com/duckduckgo/netguard.git"
+            developerConnection = "scm:git:ssh://git@github.com:duckduckgo/netguard.git"
+        }
+    }
+}
+
+android {
+    compileSdk 32
+
+    defaultConfig {
+        minSdk 23
+        targetSdk 32
+        versionCode 1
+        versionName "1.0.0"
+        project.archivesBaseName = "ddg-android-netguard-${getVersionName}"
+        setProperty("archivesBaseName", "${archivesBaseName}")
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        externalNativeBuild {
+            cmake {
+                cppFlags ''
+                arguments '-DANDROID_STL=none'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    buildFeatures {
+        prefab true
+        prefabPublishing true
+    }
+    prefab {
+        create("netguard") {
+            headers = "$parent.projectDir/../src/include"
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    externalNativeBuild {
+        cmake {
+            path file('src/main/cpp/CMakeLists.txt')
+            version '3.18.1'
+        }
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core-ktx:1.7.0'
+    testImplementation 'junit:junit:4.13.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.4'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.0'
+}
+
