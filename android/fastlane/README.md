@@ -23,22 +23,6 @@ For _fastlane_ installation instructions, see [Installing _fastlane_](https://do
 
 Create new release
 
-### android create_new_release
-
-```sh
-[bundle exec] fastlane android create_new_release
-```
-
-Create new release
-
-### android prepare_next_development_version
-
-```sh
-[bundle exec] fastlane android prepare_next_development_version
-```
-
-Prepare next development version
-
 ----
 
 This README.md is auto-generated and will be re-generated every time [_fastlane_](https://fastlane.tools) is run.

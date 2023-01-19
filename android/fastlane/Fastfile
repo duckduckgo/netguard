@@ -13,6 +13,8 @@
 # Uncomment the line if you want fastlane to automatically update itself
 # update_fastlane
 
+errorMessageCancelled = "❌ Release cancelled"
+
 default_platform(:android)
 
 platform :android do
@@ -33,27 +35,22 @@ platform :android do
         )
 
 
-        isInteractiveMode = options_release_number == nil
-
-        if !isInteractiveMode
-            UI.message("Release number: #{options_release_number}")
-        else
-            if UI.confirm("Creating release for version=#{newVersion}, next dev version=#{nextSnapshot}?\n")
-                if UI.confirm(text:"Are you sure you want to continue?")
-                    create_new_release(release_version: newVersion)
-                    prepare_next_development_version(next_dev_version: nextSnapshot)
-                else
-                    UI.error errorMessageCancelled
-                end
+        if UI.confirm("Creating release for version=#{newVersion}, next dev version=#{nextSnapshot}?\n")
+            if UI.confirm(text:"Are you sure you want to continue?")
+                create_new_release(release_version: newVersion)
+                prepare_next_development_version(next_dev_version: nextSnapshot)
             else
                 UI.error errorMessageCancelled
+                exit 1
             end
+        else
+            UI.error errorMessageCancelled
+            exit 1
         end
-
     end
 
     desc "Create new release"
-    lane :create_new_release do |options|
+    private_lane :create_new_release do |options|
         newVersion = options[:release_version]
 
         set_version_number(newVersion: "#{newVersion}")
@@ -79,21 +76,21 @@ platform :android do
     end
 
     desc "Prepare next development version"
-    lane :prepare_next_development_version do |options|
-        nextSnapshot = options[:next_dev_version]
+    private_lane :prepare_next_development_version do |options|
+        newVersion = options[:next_dev_version]
 
-        if nextSnapshot == ""
+        if newVersion == ""
             UI.user_error!("Next Snapshot Version is required")
         end
 
-        set_version_number(nextSnapshot: "#{nextSnapshot}-SNAPSHOT")
+        set_version_number(newVersion: "#{newVersion}-SNAPSHOT")
         git_commit(
             message: "Prepare next development version.",
             path: "*",
             allow_nothing_to_commit: true,
             skip_git_hooks: true
         )
-        UI.header("#{nextSnapshot}-SNAPSHOT version successfully set. Commit info: #{last_git_commit}")
+        UI.header("#{newVersion}-SNAPSHOT version successfully set. Commit info: #{last_git_commit}")
 
         if UI.confirm(text:"Do you want to push changes to remote?")
             push_to_git_remote(
@@ -102,6 +99,7 @@ platform :android do
             )
         else
             UI.error errorMessageCancelled
+            exit 1
         end
     end
 
@@ -110,7 +108,7 @@ platform :android do
         newVersion = options[:current_version]
         nextVersion = options[:next_dev_version]
         if nextVersion == nil
-            prompt(text: "Release Version will be 1.2.0. Enter Next Development Version:")
+            prompt(text: "Release Version will be #{newVersion}. Enter Next Development Version:")
         else
             nextVersion
         end
@@ -123,8 +121,11 @@ platform :android do
         if release_number == nil && snapshot_version == nil
             prompt(text: "\nLast release was: #{last_git_tag}\nEnter New Version Number:")
         elsif snapshot_version != nil
-            UI.message("Snapshot version: #{snapshot_version}")
-            snapshot_version
+            if UI.confirm("Release version will be: #{snapshot_version}")
+                snapshot_version
+            else
+                prompt(text: "Enter desired release version:")
+            end
         else
             release_number
         end
