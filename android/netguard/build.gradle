@@ -7,7 +7,9 @@ plugins {
 //apply plugin: 'maven-publish'
 
 def getVersionName = { ->
-    return getProperty("VERSION_NAME")
+    def props = new Properties()
+    file("../version.properties").withInputStream { props.load(it) }
+    return props.getProperty("VERSION_NAME")
 }
 
 import com.vanniktech.maven.publish.SonatypeHost
