@@ -2,3 +2,4 @@
 .idea
 /CMakeFiles/
 CMakeCache.txt
+src/.vscode/
