@@ -81,7 +81,7 @@ android {
     }
     prefab {
         create("netguard") {
-            headers = "$parent.projectDir/../src/include"
+            headers = "$parent.projectDir/../src/netguard/include"
         }
     }
     compileOptions {

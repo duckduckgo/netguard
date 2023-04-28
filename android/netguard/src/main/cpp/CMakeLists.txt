@@ -16,24 +16,24 @@ project("netguard")
 
 add_library( netguard
              SHARED
-             ../../../../../src/netguard.c
-             ../../../../../src/session.c
-             ../../../../../src/ip.c
-             ../../../../../src/tls.c
-             ../../../../../src/tcp.c
-             ../../../../../src/udp.c
-             ../../../../../src/icmp.c
-             ../../../../../src/dns.c
-             ../../../../../src/dhcp.c
-             ../../../../../src/pcap.c
-             ../../../../../src/memory.c
-             ../../../../../src/socks5.c
-             ../../../../../src/util.c
-             ../../../../../src/android.c
-             ../../../../../src/uid_mapping.c
+        ../../../../../src/netguard/netguard.c
+        ../../../../../src/netguard/session.c
+        ../../../../../src/netguard/ip.c
+        ../../../../../src/netguard/tls.c
+        ../../../../../src/netguard/tcp.c
+        ../../../../../src/netguard/udp.c
+        ../../../../../src/netguard/icmp.c
+        ../../../../../src/netguard/dns.c
+        ../../../../../src/netguard/dhcp.c
+        ../../../../../src/netguard/pcap.c
+        ../../../../../src/netguard/memory.c
+        ../../../../../src/netguard/socks5.c
+        ../../../../../src/netguard/util.c
+        ../../../../../src/netguard/android.c
+        ../../../../../src/netguard/uid_mapping.c
              )
 
-include_directories( ../../../../../src/include )
+include_directories(../../../../../src/netguard/include)
 
 # Searches for a specified prebuilt library and stores the path as a
 # variable. Because CMake includes system libraries in the search path by
