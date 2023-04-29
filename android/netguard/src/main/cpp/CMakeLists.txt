@@ -16,24 +16,24 @@ project("netguard")
 
 add_library( netguard
              SHARED
-             ../../../../../src/netguard.c
-             ../../../../../src/session.c
-             ../../../../../src/ip.c
-             ../../../../../src/tls.c
-             ../../../../../src/tcp.c
-             ../../../../../src/udp.c
-             ../../../../../src/icmp.c
-             ../../../../../src/dns.c
-             ../../../../../src/dhcp.c
-             ../../../../../src/pcap.c
-             ../../../../../src/memory.c
-             ../../../../../src/socks5.c
-             ../../../../../src/util.c
-             ../../../../../src/android.c
-             ../../../../../src/uid_mapping.c
+        ../../../../../src/netguard/netguard.c
+        ../../../../../src/netguard/session.c
+        ../../../../../src/netguard/ip.c
+        ../../../../../src/netguard/tls.c
+        ../../../../../src/netguard/tcp.c
+        ../../../../../src/netguard/udp.c
+        ../../../../../src/netguard/icmp.c
+        ../../../../../src/netguard/dns.c
+        ../../../../../src/netguard/dhcp.c
+        ../../../../../src/netguard/pcap.c
+        ../../../../../src/netguard/memory.c
+        ../../../../../src/netguard/socks5.c
+        ../../../../../src/netguard/util.c
+        ../../../../../src/netguard/android.c
+        ../../../../../src/netguard/uid_mapping.c
              )
 
-include_directories( ../../../../../src/include )
+include_directories(../../../../../src/netguard/include)
 
 # Searches for a specified prebuilt library and stores the path as a
 # variable. Because CMake includes system libraries in the search path by
@@ -58,3 +58,21 @@ target_link_libraries( # Specifies the target library.
                        # Links the target library to the log library
                        # included in the NDK.
                        ${log-lib} )
+
+# Makefile requires this to be with "/" to link correctly
+file(TO_CMAKE_PATH ${CMAKE_LIBRARY_OUTPUT_DIRECTORY} OUT_PATH_CMAKE)
+add_custom_target(libwg-go.so WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../src/wireguard" COMMENT "Building wireguard-go" VERBATIM COMMAND make
+        ANDROID_ARCH_NAME=${ANDROID_ARCH_NAME}
+        ANDROID_C_COMPILER=${ANDROID_C_COMPILER}
+        ANDROID_TOOLCHAIN_ROOT=${ANDROID_TOOLCHAIN_ROOT}
+        ANDROID_LLVM_TRIPLE=${ANDROID_LLVM_TRIPLE}
+        ANDROID_SYSROOT=${ANDROID_SYSROOT}
+        ANDROID_PACKAGE_NAME=${ANDROID_PACKAGE_NAME}
+        GRADLE_USER_HOME=${GRADLE_USER_HOME}
+        CFLAGS=${CMAKE_C_FLAGS}\ -Wno-unused-command-line-argument
+        LDFLAGS=${CMAKE_SHARED_LINKER_FLAGS}\ -fuse-ld=gold
+        DESTDIR=${OUT_PATH_CMAKE}
+        BUILDDIR=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/../generated-src
+        )
+
+add_dependencies(libwg-go.so netguard)

@@ -63,6 +63,7 @@ android {
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         externalNativeBuild {
             cmake {
+                targets "netguard", "libwg-go.so"
                 cppFlags ''
                 arguments '-DANDROID_STL=none'
             }
@@ -75,15 +76,15 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    buildFeatures {
-        prefab true
-        prefabPublishing true
-    }
-    prefab {
-        create("netguard") {
-            headers = "$parent.projectDir/../src/include"
-        }
-    }
+//     buildFeatures {
+//         prefab true
+//         prefabPublishing true
+//     }
+//     prefab {
+//         create("netguard") {
+//             headers = "$parent.projectDir/../src/netguard/include"
+//         }
+//     }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
