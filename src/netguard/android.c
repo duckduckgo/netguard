@@ -3,6 +3,7 @@
 
 #include "netguard.h"
 #include "uid_mapping.h"
+#include "tun.h"
 
 void __platform_log_print(int prio, const char *tag, const char *fmt, ...) {
     char line[1024];
@@ -266,6 +267,16 @@ Java_com_duckduckgo_vpn_network_impl_RealVpnNetwork_jni_1done(
     cleanup_uid_cache();
 
     ng_free(ctx, __FILE__, __LINE__);
+}
+
+JNIEXPORT jint JNICALL Java_com_duckduckgo_mobile_android_vpn_service_TrackerBlockingVpnService_jni_1wait_1for_1tun_1up(
+    JNIEnv *env, jobject obj, jint tun_fd, jboolean is_ipv6_enabled
+) {
+    // Call the wait_for_tunnel_up function
+    int result = wait_for_tunnel_up((int)tun_fd, (int)is_ipv6_enabled);
+
+    // Return the result as a jint
+    return (jint)result;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
