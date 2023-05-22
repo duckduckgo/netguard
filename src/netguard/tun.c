@@ -30,15 +30,14 @@ static bool is_public_ip(const struct sockaddr_storage* address);
 
 /**
  * Sends random data to a random public IP address
- * @param is_ipv6_enabled whether trying on IPv6 as well
  * @return `send_data_result_t` that identifies success or error
  */
-static send_data_result_t try_sending_random_udp(int is_ipv6_enabled);
+static send_data_result_t try_sending_random_udp();
 
 #define TIMEOUT_SECONDS 60
 #define TIMEOUT_MICROSECONDS 300000
 
-int wait_for_tunnel_up(int tun_fd, int is_ipv6_enabled) {
+int wait_for_tunnel_up(int tun_fd) {
     fd_set fd_set;
     struct timeval timeout;
     struct timeval start_time, current_time;
@@ -67,14 +66,13 @@ int wait_for_tunnel_up(int tun_fd, int is_ipv6_enabled) {
         }
 
         FD_SET(tun_fd, &fd_set);
-        try_sending_random_udp(is_ipv6_enabled);
+        try_sending_random_udp();
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////
 
-static send_data_result_t try_sending_random_udp(int is_ipv6_enabled) {
-    bool tried_ipv6 = false;
+static send_data_result_t try_sending_random_udp() {
     struct timespec start, current;
     clock_gettime(CLOCK_MONOTONIC, &start);
 
@@ -85,37 +83,20 @@ static send_data_result_t try_sending_random_udp(int is_ipv6_enabled) {
             return SEND_RANDOM_DATA_OK;
         }
 
-        bool should_generate_ipv4 = !is_ipv6_enabled || rand() % 2 == 0;
-
         uint16_t rand_port = rand();
         struct sockaddr_storage local_addr, rand_dest_addr;
 
-        if (should_generate_ipv4 || tried_ipv6) {
-            struct sockaddr_in *ipv4_addr = (struct sockaddr_in *)&local_addr;
-            memset(ipv4_addr, 0, sizeof(*ipv4_addr));
-            ipv4_addr->sin_family = AF_INET;
-            ipv4_addr->sin_port = 0;
+        // generate IPv4 packet
+        struct sockaddr_in *ipv4_addr = (struct sockaddr_in *)&local_addr;
+        memset(ipv4_addr, 0, sizeof(*ipv4_addr));
+        ipv4_addr->sin_family = AF_INET;
+        ipv4_addr->sin_port = 0;
 
-            struct sockaddr_in *ipv4_dest_addr = (struct sockaddr_in *)&rand_dest_addr;
-            memset(ipv4_dest_addr, 0, sizeof(*ipv4_dest_addr));
-            ipv4_dest_addr->sin_family = AF_INET;
-            ipv4_dest_addr->sin_port = htons(rand_port);
-            ipv4_dest_addr->sin_addr.s_addr = rand();
-        } else {
-            struct sockaddr_in6 *ipv6_addr = (struct sockaddr_in6 *)&local_addr;
-            memset(ipv6_addr, 0, sizeof(*ipv6_addr));
-            ipv6_addr->sin6_family = AF_INET6;
-            ipv6_addr->sin6_port = 0;
-
-            struct sockaddr_in6 *ipv6_dest_addr = (struct sockaddr_in6 *)&rand_dest_addr;
-            memset(ipv6_dest_addr, 0, sizeof(*ipv6_dest_addr));
-            ipv6_dest_addr->sin6_family = AF_INET6;
-            ipv6_dest_addr->sin6_port = htons(rand_port);
-            for (int i = 0; i < 16; i++) {
-                ((uint8_t *)&ipv6_dest_addr->sin6_addr)[i] = rand();
-            }
-            tried_ipv6 = true;
-        }
+        struct sockaddr_in *ipv4_dest_addr = (struct sockaddr_in *)&rand_dest_addr;
+        memset(ipv4_dest_addr, 0, sizeof(*ipv4_dest_addr));
+        ipv4_dest_addr->sin_family = AF_INET;
+        ipv4_dest_addr->sin_port = htons(rand_port);
+        ipv4_dest_addr->sin_addr.s_addr = rand();
 
         // continue if not a public IP address
         if (is_public_ip(&rand_dest_addr) == false) {
@@ -139,11 +120,7 @@ static send_data_result_t try_sending_random_udp(int is_ipv6_enabled) {
             return SEND_RANDOM_DATA_OK;
         } else {
             close(socket_fd);
-            if (tried_ipv6) {
-                continue;
-            } else {
-                return SEND_RANDOM_DATA_ERROR_SEND_SOCKET;
-            }
+            return SEND_RANDOM_DATA_ERROR_SEND_SOCKET;
         }
     }
 }

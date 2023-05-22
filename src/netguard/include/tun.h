@@ -8,9 +8,8 @@
  * If the tunnel becomes ready, it returns success, else failure
  *
  * @param tun_fd tunnel file descriptor
- * @param is_ipv6_enabled whether IPv6 is enabled or not
  * @return `0` if tunnel becomes ready, -1 otherwise
  */
-int wait_for_tunnel_up(int tun_fd, int is_ipv6_enabled);
+int wait_for_tunnel_up(int tun_fd);
 
 #endif //NETGUARD_TUN_H
