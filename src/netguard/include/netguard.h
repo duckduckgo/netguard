@@ -39,6 +39,7 @@
 #include "global.h"
 #include "memory.h"
 #include "util.h"
+#include "fd_util.h"
 #include "platform.h"
 #include "icmp.h"
 #include "udp.h"

@@ -15,10 +15,6 @@ char *hex(const uint8_t *data, const size_t len);
 
 int32_t get_local_port(const int sock);
 
-int is_readable(int fd);
-
-int is_writable(int fd);
-
 long long get_ms();
 
 const char *strstate(const int state);
