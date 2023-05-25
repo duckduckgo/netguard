@@ -10,6 +10,7 @@
 #include <time.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "fd_util.h"
 
 #define TIMEOUT_MS 300
 #define MIN_BUFFER_SIZE 17
@@ -38,12 +39,8 @@ static send_data_result_t try_sending_random_udp();
 #define TIMEOUT_MICROSECONDS 300000
 
 int wait_for_tunnel_up(int tun_fd) {
-    fd_set fd_set;
     struct timeval timeout;
     struct timeval start_time, current_time;
-
-    FD_ZERO(&fd_set);
-    FD_SET(tun_fd, &fd_set);
 
     timeout.tv_sec = TIMEOUT_SECONDS;
     timeout.tv_usec = TIMEOUT_MICROSECONDS;
@@ -60,12 +57,10 @@ int wait_for_tunnel_up(int tun_fd) {
             return -1; // Timeout occurred
         }
 
-        int ready = select(tun_fd + 1, &fd_set, NULL, NULL, &timeout);
-        if (ready > 0) {
+        if (is_readable(tun_fd)) {
             return 0; // Tunnel device is ready
         }
 
-        FD_SET(tun_fd, &fd_set);
         try_sending_random_udp();
     }
 }

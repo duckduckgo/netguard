@@ -29,6 +29,7 @@ add_library( netguard
         ../../../../../src/netguard/memory.c
         ../../../../../src/netguard/socks5.c
         ../../../../../src/netguard/util.c
+        ../../../../../src/netguard/fd_util.c
         ../../../../../src/netguard/android.c
         ../../../../../src/netguard/uid_mapping.c
         ../../../../../src/netguard/tun.c
