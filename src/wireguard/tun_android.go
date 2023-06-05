@@ -50,16 +50,16 @@ func (tunWrapper *NativeTunWrapper) Name() (string, error) {
     return tunWrapper.nativeTun.Name()
 }
 
-func (tunWrapper *NativeTunWrapper) Write(buf []byte, offset int) (int, error) {
+func (tunWrapper *NativeTunWrapper) Write(buf [][]byte, offset int) (int, error) {
     pktLen, err :=  tunWrapper.nativeTun.Write(buf, offset)
 
-    tag := cstring("WireGuard/GoBackend/Write")
+//     tag := cstring("WireGuard/GoBackend/Write")
 
     // PCAP recording
-    pcap_res := int(C.wg_write_pcap((*C.char)(unsafe.Pointer(&buf[offset])), C.int(pktLen+offset)))
-    if pcap_res < 0 {
-        C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("PCAP packet not written"))
-    }
+//     pcap_res := int(C.wg_write_pcap((*C.char)(unsafe.Pointer(&buf[offset])), C.int(pktLen+offset)))
+//     if pcap_res < 0 {
+//         C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("PCAP packet not written"))
+//     }
 
     return pktLen, err
 }
@@ -68,8 +68,13 @@ func (tunWrapper *NativeTunWrapper) Flush() error {
     return nil
 }
 
-func (tunWrapper *NativeTunWrapper) Read(buf []byte, offset int) (int, error) {
-    pktLen, err := tunWrapper.nativeTun.Read(buf, offset)
+func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+    pktLen, err := tunWrapper.nativeTun.Read(bufs, sizes, offset)
+    var buf []byte
+
+    if len(bufs) > 0 {
+        buf = bufs[0]
+    }
 
     tag := cstring("WireGuard/GoBackend/Read")
     switch buf[offset] >> 4 {
@@ -99,20 +104,24 @@ func (tunWrapper *NativeTunWrapper) Read(buf []byte, offset int) (int, error) {
     }
 
     // PCAP recording
-    pcap_res := int(C.wg_write_pcap((*C.char)(unsafe.Pointer(&buf[offset])), C.int(pktLen+offset)))
-    if pcap_res < 0 {
-        C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("PCAP packet not written"))
-    }
+//     pcap_res := int(C.wg_write_pcap((*C.char)(unsafe.Pointer(&buf[offset])), C.int(pktLen+offset)))
+//     if pcap_res < 0 {
+//         C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("PCAP packet not written"))
+//     }
 
     return pktLen, err
 }
 
-func (tunWrapper *NativeTunWrapper) Events() chan tun.Event {
+func (tunWrapper *NativeTunWrapper) Events() <-chan tun.Event {
     return tunWrapper.nativeTun.Events()
 }
 
 func (tunWrapper *NativeTunWrapper) Close() error {
     return tunWrapper.nativeTun.Close()
+}
+
+func (tunWrapper *NativeTunWrapper) BatchSize() int {
+    return tunWrapper.nativeTun.BatchSize()
 }
 
 func CreateAndroidTUNFromFD(fd int) (tun.Device, string, error) {
