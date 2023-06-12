@@ -68,39 +68,44 @@ func (tunWrapper *NativeTunWrapper) Flush() error {
     return nil
 }
 
+// tunWrapper.nativeTun.Read() Reads one or more packets from the Device (without any additional headers).
+// On a successful read it returns the number of packets read, and sets
+// packet lengths within the sizes slice. len(sizes) must be >= len(bufs).
+// A nonzero offset can be used to instruct the Device on where to begin
+// reading into each element of the bufs slice.
 func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
-    pktLen, err := tunWrapper.nativeTun.Read(bufs, sizes, offset)
-    var buf []byte
-
-    if len(bufs) > 0 {
-        buf = bufs[0]
-    }
+    n, err := tunWrapper.nativeTun.Read(bufs, sizes, offset)
 
     tag := cstring("WireGuard/GoBackend/Read")
-    switch buf[offset] >> 4 {
-        case ipv4.Version:
-            if len(buf) < ipv4.HeaderLen {
-                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 pkt"))
-                return pktLen, err
-            }
 
-            // Check if TCP
-            protocol := buf[offset + 9]
-            if protocol != 0x06 {
-                // Skip checking with AppTP since for now we only check TCP connections
-                return pktLen, err
-            }
+    if n == 0 {
+        return n, err
+    }
 
-            allow := int(C.is_pkt_allowed((*C.char)(unsafe.Pointer(&buf[offset])), C.int(pktLen+offset)))
-            if allow == 0 {
-                // Returning 0 blocks the connection since we will not forward this packet
-                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Blocking connection"))
-                return 0, err
-            }
+    for i, buf := range bufs {
+        switch buf[offset] >> 4 {
+            case ipv4.Version:
+                if len(buf) < ipv4.HeaderLen {
+                    C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 pkt"))
+                    sizes[i] = 0
+                } else {
+                    // Check if TCP
+                    protocol := buf[offset + 9]
+                    if protocol == 0x06 {
+                        // Skip checking with AppTP since for now we only check TCP connections
+                        allow := int(C.is_pkt_allowed((*C.char)(unsafe.Pointer(&buf[offset])), C.int(sizes[i]+offset)))
+                        if allow == 0 {
+                            // Returning 0 blocks the connection since we will not forward this packet
+                            C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Blocking connection"))
+                            sizes[i] = 0
+                        }
+                    }
+                }
 
-        // TODO: IPv6
-        default:
-            C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Invalid IP"))
+            // TODO: IPv6
+            default:
+                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Invalid IP"))
+        }
     }
 
     // PCAP recording
@@ -109,7 +114,7 @@ func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int)
 //         C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("PCAP packet not written"))
 //     }
 
-    return pktLen, err
+    return n, err
 }
 
 func (tunWrapper *NativeTunWrapper) Events() <-chan tun.Event {
