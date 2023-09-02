@@ -306,7 +306,7 @@ static void handle_ip(const struct arguments *args,
             uid = get_uid_q(args, version, protocol, source, sport, dest, dport);
     }
 
-    log_print(PLATFORM_LOG_PRIORITY_DEBUG,
+    log_print(PLATFORM_LOG_PRIORITY_INFO,
                 "Packet v%d %s/%u > %s/%u proto %d flags %s uid %d",
                 version, source, sport, dest, dport, protocol, flags, uid);
 

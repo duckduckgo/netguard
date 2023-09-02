@@ -228,8 +228,8 @@ static uint32_t get_send_window(const struct tcp_session *cur) {
 
     uint32_t total = (behind < cur->send_window ? cur->send_window - behind : 0);
 
-    log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Send window behind %u window %u total %u",
-                behind, cur->send_window, total);
+    // log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Send window behind %u window %u total %u",
+    //             behind, cur->send_window, total);
 
     return total;
 }

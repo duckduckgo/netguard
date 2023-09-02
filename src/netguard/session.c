@@ -104,7 +104,7 @@ void *handle_events(void *a) {
     // Loop
     long long last_check = 0;
     while (!args->ctx->stopping) {
-        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Loop");
+        // log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Loop");
 
         int recheck = 0;
         int timeout = EPOLL_TIMEOUT;

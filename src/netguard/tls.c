@@ -20,7 +20,7 @@ int is_sni_found_and_blocked(
     get_server_name(pkt, length, daddr, version, tls, sn);
 
     if (strlen(sn) == 0) {
-        log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found");
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS server name not found");
         return 0;
     }
 

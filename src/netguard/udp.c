@@ -139,7 +139,7 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
                     inet_ntop(AF_INET, &s->udp.daddr.ip4, dest, sizeof(dest));
                 else
                     inet_ntop(AF_INET6, &s->udp.daddr.ip6, dest, sizeof(dest));
-                log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP recv bytes %d from %s/%u for tun",
+                log_print(PLATFORM_LOG_PRIORITY_DEBUG, "UDP recv bytes %d from %s/%u for tun",
                             bytes, dest, ntohs(s->udp.dest));
 
                 s->udp.received += bytes;
@@ -341,7 +341,7 @@ jboolean handle_udp(const struct arguments *args,
             return 1;
     }
 
-    log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP forward from tun %s/%u to %s/%u data %d",
+    log_print(PLATFORM_LOG_PRIORITY_DEBUG, "UDP forward from tun %s/%u to %s/%u data %d",
                 source, ntohs(udphdr->source), dest, ntohs(udphdr->dest), datalen);
 
     cur->udp.time = time(NULL);
