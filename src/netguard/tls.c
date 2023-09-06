@@ -67,7 +67,7 @@ void get_server_name(
                 // Extract host from ClientHello SNI extension header
 
                 // this skips the TLS header, time and Client Random - and starts with the session ID length
-                uint8_t index = 43;
+                uint32_t index = 43;
                 uint8_t session_id_len = tls[index++];
                 index += session_id_len;
 
@@ -86,10 +86,10 @@ void get_server_name(
                     // Extension headers found
                     log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS ClientHello extensions found");
 
-                    uint16_t searched = 0;
+                    uint32_t searched = 0;
                     uint8_t found = 0;
 
-                    while (searched < extensions_len && index < length) {
+                    while (searched < extensions_len && index + 2 < length) {
                         uint16_t extension_type = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
                         index += 2;
 
@@ -100,6 +100,10 @@ void get_server_name(
                             break;
                         } else {
                             log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS extension type %d", extension_type);
+
+                            if (index + 1 >= length) {
+                                break;
+                            }
 
                             uint16_t extension_len = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
                             index += 2;
