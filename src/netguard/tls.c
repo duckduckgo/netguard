@@ -59,7 +59,7 @@ void get_server_name(
         } else if (content_type == TLS_TYPE_HANDSHAKE_RECORD) { // content type handshake
             // handshake packet type
             uint16_t tls_handshake_size = (tls[3] << 8 & 0xFF00) + (tls[4] & 0x00FF);
-            if (length - (tls - pkt) < 5) {
+            if (length - (tls - pkt) < tls_handshake_size + 5) {
                 log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS header too short");
             } else if (tls[5] == 1) {
                 log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS packet ClientHello msg found");
