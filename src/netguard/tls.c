@@ -2,6 +2,15 @@
 #include "netguard.h"
 #include "tls.h"
 
+#define TLS_HEADER_LEN 5 // size of the TLS Record Header
+#ifndef MIN
+#define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
+#endif
+
+static int parse_tls_server_name(const uint8_t *data, size_t data_len, char *server_name);
+static int parse_extensions(const uint8_t*, size_t, char *);
+static int parse_server_name_extension(const uint8_t*, size_t, char *);
+
 int is_sni_found_and_blocked(
     const struct arguments *args,
     const uint8_t *pkt,
@@ -29,6 +38,163 @@ int is_sni_found_and_blocked(
     return is_domain_blocked(args, sn, uid);
 }
 
+/**
+ * Parse a TLS packet for the Server Name Indication extension in the client hello handshake.
+ * Returns the first server name found
+ *
+ * @param data the TLS packet
+ * @param data_len the TLS packet length
+ * @param server_name pointer to the server name static array. This method does not allocate memory for it
+ *
+ * @returns
+ *  >=0 length of the server name found
+ *  -1  incomplete TLS request
+ *  -2  no SNI header found
+ *  -3  invalid TLS client hello
+ *  -4  invalid TLs packet
+ */
+static int parse_tls_server_name(const uint8_t *data, size_t data_len, char *server_name) {
+    *server_name = 0;
+
+    if (data_len < TLS_HEADER_LEN) {
+        return -1;
+    }
+
+    if ((data[0] & 0x80) && (data[2] == 1)) {
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Received SSL 2.0 Client Hello which can not support SNI.");
+        return -2;
+    }
+
+    uint8_t content_type = (uint8_t) *data;
+    if (content_type != 0x16) {
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Request did not begin with TLS handshake.");
+        return -3;
+    }
+
+    uint8_t tls_version_major = data[1];
+    uint8_t tls_version_minor = data[2];
+    if (tls_version_major < 3) {
+        // receive handshake that can't support SNI
+        return -2;
+    }
+
+    /* TLS record length */
+    size_t len = ((size_t)data[3] << 8) + (size_t)data[4] + TLS_HEADER_LEN;
+    data_len = MIN(len, data_len);
+    if (data_len < len) {
+        return -1;
+    }
+
+    /* handshake */
+    size_t pos = TLS_HEADER_LEN;
+    if (pos + 1 > data_len) {
+        return -4;
+    }
+
+    if (data[pos] != 0x1) {
+        // not a client hello
+        return -4;
+    }
+
+    /* Skip past fixed length records:
+        1	Handshake Type
+        3	Length
+        2	Version (again)
+        32	Random
+        to	Session ID Length
+    */
+    pos += 38;
+
+    // Session ID
+    if (pos + 1 > data_len) return -4;
+    len = (size_t)data[pos];
+    pos += 1 + len;
+
+    /* Cipher Suites */
+    if (pos + 2 > data_len) return -4;
+    len = ((size_t)data[pos] << 8) + (size_t)data[pos + 1];
+    pos += 2 + len;
+
+    /* Compression Methods */
+    if (pos + 1 > data_len) return -4;
+    len = (size_t)data[pos];
+    pos += 1 + len;
+
+    if (pos == data_len && tls_version_major == 3 && tls_version_minor == 0) {
+        // "Received SSL 3.0 handshake without extensions"
+        return -2;
+    }
+
+    /* Extensions */
+    if (pos + 2 > data_len) {
+        return -4;
+    }
+    len = ((size_t)data[pos] << 8) + (size_t)data[pos + 1];
+    pos += 2;
+
+    if (pos + len > data_len) {
+        return -4;
+    }
+    return parse_extensions(data + pos, len, server_name);
+}
+
+static int parse_extensions(const uint8_t *data, size_t data_len, char *hostname) {
+    size_t pos = 0;
+    size_t len;
+
+    /* Parse each 4 bytes for the extension header */
+    while (pos + 4 <= data_len) {
+        /* Extension Length */
+        len = ((size_t)data[pos + 2] << 8) +
+              (size_t)data[pos + 3];
+
+        /* Check if it's a server name extension */
+        if (data[pos] == 0x00 && data[pos + 1] == 0x00) {
+            /* There can be only one extension of each type, so we break
+               our state and move p to beinnging of the extension here */
+            if (pos + 4 + len > data_len)
+                return -5;
+            return parse_server_name_extension(data + pos + 4, len, hostname);
+        }
+        pos += 4 + len; /* Advance to the next extension header */
+    }
+    /* Check we ended where we expected to */
+    if (pos != data_len)
+        return -5;
+
+    return -2;
+}
+
+static int parse_server_name_extension(const uint8_t *data, size_t data_len, char *hostname) {
+    size_t pos = 2; /* skip server name list length */
+    size_t len;
+
+    while (pos + 3 < data_len) {
+        len = ((size_t)data[pos + 1] << 8) +
+              (size_t)data[pos + 2];
+
+        if (pos + 3 + len > data_len) {
+            return -4;
+        }
+
+        switch (data[pos]) { /* name type */
+            case 0x00: /* host_name */
+                strncpy(hostname, (const char *)(data + pos + 3), len);
+                (hostname)[len] = '\0';
+                return len;
+            default:
+                log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Unknown server name extension name type: %d", data[pos]);
+        }
+        pos += 3 + len;
+    }
+    /* Check we ended where we expected to */
+    if (pos != data_len) {
+        return -4;
+    }
+
+    return -2;
+}
+
 void get_server_name(
     const uint8_t *pkt,
     size_t length,
@@ -37,116 +203,19 @@ void get_server_name(
     const uint8_t *tls,
     char *server_name
 ) {
-    // ensure length is 0
-    *server_name = 0;
-
-    char dest[INET6_ADDRSTRLEN + 1];
-    inet_ntop(version == 4 ? AF_INET : AF_INET6, daddr, dest, sizeof(dest));
-
-    // Check TLS client hello header
-    uint8_t content_type = (uint8_t) *tls;
-    if (content_type >= 20 && content_type <= 24){
-        // extract TLS versions
-        uint8_t tls_major_version = (uint8_t) tls[1];
-        uint8_t tls_minor_version = (uint8_t) tls[2];
-
-        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS header found %d, %d/%d", content_type, tls_major_version, tls_minor_version);
-
-        if (tls_major_version < 0x03){
-            log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS %d does not have SNI header", tls_major_version);
-        } else if (content_type == TLS_TYPE_APPLICATION_DATA) { // content type application data
-            log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS application data for address %s", dest);
-        } else if (content_type == TLS_TYPE_HANDSHAKE_RECORD) { // content type handshake
-            // handshake packet type
-            uint16_t tls_handshake_size = (tls[3] << 8 & 0xFF00) + (tls[4] & 0x00FF);
-            if (length - (tls - pkt) < tls_handshake_size + 5) {
-                log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS header too short");
-            } else if (tls[5] == 1) {
-                log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS packet ClientHello msg found");
-
-                // Extract host from ClientHello SNI extension header
-
-                // this skips the TLS header, time and Client Random - and starts with the session ID length
-                uint32_t index = 43;
-                uint8_t session_id_len = tls[index++];
-                index += session_id_len;
-
-                uint16_t cipher_suite_len = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
-                index += 2;
-                index += cipher_suite_len;
-
-                uint16_t compression_method_len = tls[index++];
-                index += compression_method_len;
-
-                uint16_t extensions_len = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
-                index += 2;
-                if (extensions_len == 0) {
-                    log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS ClientHello, no extensions found");
-                } else {
-                    // Extension headers found
-                    log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS ClientHello extensions found");
-
-                    uint32_t searched = 0;
-                    uint8_t found = 0;
-
-                    while (searched < extensions_len && index + 2 < length) {
-                        uint16_t extension_type = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
-                        index += 2;
-
-                        // Extension type is SERVER_NAME_EXTENSION_TYPE
-                        if (extension_type == TLS_EXTENSION_TYPE_SERVER_NAME) {
-                            log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS ClientHello SNI found at %d", index);
-                            found = 1;
-                            break;
-                        } else {
-                            log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS extension type %d", extension_type);
-
-                            if (index + 1 >= length) {
-                                break;
-                            }
-
-                            uint16_t extension_len = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
-                            index += 2;
-                            // skip to the next extension, if there is one
-                            index += extension_len;
-
-                            // record number of extension bytes searched
-                            // which is the current extension length + 4 (2 bytes for type, 2 bytes for length)
-                            searched += extension_len + 4;
-                        }
-                    }
-
-                    if (found) {
-                        // skip 5 bytes for data sizes and list entry type we don't need to know about
-                        index += 5;
-
-                        uint16_t server_name_len = (tls[index] << 8 & 0xFF00) + (tls[index + 1] & 0x00FF);
-                        index += 2;
-
-                        // This should not happen but just guarding against it
-                        if (server_name_len > FQDN_LENGTH) {
-                            log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS SNI too long %d", server_name_len);
-                        } else {
-                            memcpy(server_name, &tls[index], server_name_len);
-                            server_name[server_name_len] = 0;
-                            if (is_valid_utf8(server_name)) {
-                                log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS server name (%d bytes) is %s (%s)", server_name_len, server_name, dest);
-                            } else {
-                                log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS server name not valid UTF-8: %s (%d bytes)", server_name, server_name_len);
-                                *server_name = 0;
-                            }
-                        }
-                    }
-
-                }
-
-            } else {
-                log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS packet is not ClientHello msg %d", tls[5]);
-            }
-        } else {
-            log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS packet is not handshake packet");
-        }
-    } else{
-        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS header NOT found");
+    size_t data_len = length - (tls - pkt);
+    int error_code = parse_tls_server_name(tls, data_len, server_name);
+    if (error_code >= 0) {
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Found server name %s", server_name);
+    } else if (error_code == -1) {
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Incomplete TLs request");
+    } else if (error_code == -2) {
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "No SNI header found");
+    } else if (error_code == -3) {
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "invalid TLS client hello");
+    } else if (error_code == -4) {
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "invalid TLS packet");
+    } else {
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Unknown error");
     }
 }
