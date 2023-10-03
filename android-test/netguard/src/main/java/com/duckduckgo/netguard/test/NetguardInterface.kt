@@ -7,6 +7,13 @@ import java.nio.ByteBuffer
 class NetguardInterface {
     external fun isValidUtf8(buffer: ByteBuffer): Boolean
 
+    external fun getServerName(
+        pkt: ByteBuffer,
+        length: Int,
+        addr: ByteBuffer,
+        version: Int,
+    )
+
     init {
         try {
             System.loadLibrary("netguard")

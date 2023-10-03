@@ -32,6 +32,8 @@ add_library( netguard
         ../../../../../src/netguard/util.c
         ../../../../../src/netguard/android.c
         ../../../../../src/netguard/uid_mapping.c
+        ../../../../../src/netguard/fd_util.c
+        ../../../../../src/netguard/tun.c
              )
 
 include_directories(../../../../../src/netguard/include)
