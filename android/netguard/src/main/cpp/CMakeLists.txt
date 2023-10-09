@@ -20,6 +20,7 @@ add_library( netguard
         ../../../../../src/netguard/session.c
         ../../../../../src/netguard/ip.c
         ../../../../../src/netguard/tls.c
+        ../../../../../src/netguard/tls_parser.c
         ../../../../../src/netguard/tcp.c
         ../../../../../src/netguard/udp.c
         ../../../../../src/netguard/icmp.c

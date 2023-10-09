@@ -1,5 +1,6 @@
-/cmake-build-debug/
+**/cmake-build-debug/
 .idea
 /CMakeFiles/
 CMakeCache.txt
 src/.vscode/
+*.o

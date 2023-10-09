@@ -8,11 +8,9 @@
 
 #define TLS_EXTENSION_TYPE_SERVER_NAME 0
 
-void get_server_name(
+int get_server_name(
     const uint8_t *pkt,
     size_t length,
-    void *daddr,
-    uint8_t version,
     const uint8_t *tcp_payload,
     char *server_name
 );
