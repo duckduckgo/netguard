@@ -103,7 +103,7 @@ int is_pkt_allowed(const uint8_t *buffer, int length) {
     char sn[FQDN_LENGTH];
     memset(sn, 0, FQDN_LENGTH);
     *sn = 0;
-    get_server_name(buffer, length, daddr, version, tls, sn);
+    get_server_name(buffer, length, tls, sn);
     if (strlen(sn) == 0) {
         log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found");
         return 1;
