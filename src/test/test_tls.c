@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
@@ -409,21 +410,6 @@ const unsigned char bad_data_4[] = {
         0x00, 0x01, // Length
         0x01 // Mode: Peer allows to send requests
 };
-static struct test_packet good[] = {
-        { (char *)good_data_1, sizeof(good_data_1) },
-        { (char *)good_data_2, sizeof(good_data_2) },
-        { (char *)good_data_3, sizeof(good_data_3) },
-        { (char *)good_data_4, sizeof(good_data_4) },
-        { (char *)good_data_5, sizeof(good_data_5) }
-};
-
-static struct test_packet bad[] = {
-        { (char *)ssl30_request, sizeof(ssl30_request) },
-        { (char *)ssl20_client_hello, sizeof(ssl20_client_hello) },
-        { (char *)bad_data_1, sizeof(bad_data_1) },
-        { (char *)bad_data_2, sizeof(bad_data_2) },
-        { (char *)bad_data_3, sizeof(bad_data_3) }
-};
 
 int main() {
     uint8_t *pkt = (uint8_t *)good_data_1;
@@ -493,7 +479,7 @@ int main() {
     error = get_server_name(pkt, sizeof(bad_data_2), pkt, sn);
     assert(strcmp("localhost", sn) != 0);
     assert(strlen(sn) == 0);
-    assert(error == -1);
+    assert(error == -4);
 
     pkt = (uint8_t *)bad_data_3;
     memset(sn, 0, FQDN_LENGTH);
