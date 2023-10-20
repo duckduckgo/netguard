@@ -381,6 +381,37 @@ void dns_resolved(const struct arguments *args,
 #endif
 }
 
+static jmethodID midReportTLSParsingError = NULL;
+
+void report_tls_parsing_error(const struct arguments *args, jint error_code) {
+#ifdef PROFILE_JNI
+    float mselapsed;
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+#endif
+
+    jclass clsService = (*args->env)->GetObjectClass(args->env, args->instance);
+    ng_add_alloc(clsService, "clsService");
+
+    const char *signature = "(I)V";
+    if (midReportTLSParsingError == NULL)
+        midReportTLSParsingError = jniGetMethodID(args->env, clsService, "reportTLSParsingError", signature);
+
+    (*args->env)->CallVoidMethod(args->env, args->instance, midReportTLSParsingError, error_code);
+    jniCheckException(args->env);
+
+    (*args->env)->DeleteLocalRef(args->env, clsService);
+    ng_delete_alloc(clsService, __FILE__, __LINE__);
+
+#ifdef PROFILE_JNI
+    gettimeofday(&end, NULL);
+    mselapsed = (end.tv_sec - start.tv_sec) * 1000.0 +
+                (end.tv_usec - start.tv_usec) / 1000.0;
+    if (mselapsed > PROFILE_JNI)
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "is_domain_blocked %f", mselapsed);
+#endif
+}
+
 static jmethodID midIsDomainBlocked = NULL;
 
 jboolean is_domain_blocked(const struct arguments *args, const char *name, jint uid) {

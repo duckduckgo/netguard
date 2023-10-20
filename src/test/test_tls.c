@@ -455,7 +455,7 @@ int main() {
     error = get_server_name(pkt, sizeof(ssl30_request), pkt, sn);
     assert(strcmp("localhost", sn) != 0);
     assert(strlen(sn) == 0);
-    assert(error == -2);
+    assert(error == -10);
 
     pkt = (uint8_t *)ssl20_client_hello;
     memset(sn, 0, FQDN_LENGTH);
@@ -471,7 +471,7 @@ int main() {
     error = get_server_name(pkt, sizeof(bad_data_1), pkt, sn);
     assert(strcmp("localhost", sn) != 0);
     assert(strlen(sn) == 0);
-    assert(error == -4);
+    assert(error == -12);
 
     pkt = (uint8_t *)bad_data_2;
     memset(sn, 0, FQDN_LENGTH);
@@ -479,7 +479,7 @@ int main() {
     error = get_server_name(pkt, sizeof(bad_data_2), pkt, sn);
     assert(strcmp("localhost", sn) != 0);
     assert(strlen(sn) == 0);
-    assert(error == -4);
+    assert(error == -12);
 
     pkt = (uint8_t *)bad_data_3;
     memset(sn, 0, FQDN_LENGTH);

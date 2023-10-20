@@ -65,7 +65,7 @@ static int parse_tls_server_name(const uint8_t *data, size_t data_len, char *ser
     uint8_t tls_version_minor = data[2];
     if (tls_version_major < 3) {
         // receive handshake that can't support SNI
-        return -2;
+        return -4;
     }
 
     /* TLS record length */
@@ -79,12 +79,12 @@ static int parse_tls_server_name(const uint8_t *data, size_t data_len, char *ser
     /* handshake */
     size_t pos = TLS_HEADER_LEN;
     if (pos + 1 > data_len) {
-        return -4;
+        return -5;
     }
 
     if (data[pos] != 0x1) {
         // not a client hello
-        return -4;
+        return -6;
     }
 
     /* Skip past fixed length records:
@@ -97,34 +97,34 @@ static int parse_tls_server_name(const uint8_t *data, size_t data_len, char *ser
     pos += 38;
 
     // Session ID
-    if (pos + 1 > data_len) return -4;
+    if (pos + 1 > data_len) return -7;
     len = (size_t)data[pos];
     pos += 1 + len;
 
     /* Cipher Suites */
-    if (pos + 2 > data_len) return -4;
+    if (pos + 2 > data_len) return -8;
     len = ((size_t)data[pos] << 8) + (size_t)data[pos + 1];
     pos += 2 + len;
 
     /* Compression Methods */
-    if (pos + 1 > data_len) return -4;
+    if (pos + 1 > data_len) return -9;
     len = (size_t)data[pos];
     pos += 1 + len;
 
     if (pos == data_len && tls_version_major == 3 && tls_version_minor == 0) {
         // "Received SSL 3.0 handshake without extensions"
-        return -2;
+        return -10;
     }
 
     /* Extensions */
     if (pos + 2 > data_len) {
-        return -4;
+        return -11;
     }
     len = ((size_t)data[pos] << 8) + (size_t)data[pos + 1];
     pos += 2;
 
     if (pos + len > data_len) {
-        return -4;
+        return -12;
     }
     return parse_extensions(data + pos, len, server_name);
 }
@@ -144,16 +144,16 @@ static int parse_extensions(const uint8_t *data, size_t data_len, char *hostname
             /* There can be only one extension of each type, so we break
                our state and move p to beinnging of the extension here */
             if (pos + 4 + len > data_len)
-                return -5;
+                return -20;
             return parse_server_name_extension(data + pos + 4, len, hostname);
         }
         pos += 4 + len; /* Advance to the next extension header */
     }
     /* Check we ended where we expected to */
     if (pos != data_len)
-        return -5;
+        return -21;
 
-    return -2;
+    return -22;
 }
 
 static int parse_server_name_extension(const uint8_t *data, size_t data_len, char *hostname) {
@@ -165,7 +165,7 @@ static int parse_server_name_extension(const uint8_t *data, size_t data_len, cha
               (size_t)data[pos + 2];
 
         if (pos + 3 + len > data_len) {
-            return -4;
+            return -30;
         }
 
         switch (data[pos]) { /* name type */
@@ -180,10 +180,10 @@ static int parse_server_name_extension(const uint8_t *data, size_t data_len, cha
     }
     /* Check we ended where we expected to */
     if (pos != data_len) {
-        return -4;
+        return -31;
     }
 
-    return -2;
+    return -32;
 }
 
 int get_server_name(
@@ -196,16 +196,8 @@ int get_server_name(
     int error_code = parse_tls_server_name(tls, data_len, server_name);
     if (error_code >= 0) {
         log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Found server name %s", server_name);
-    } else if (error_code == -1) {
-        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Incomplete TLs request");
-    } else if (error_code == -2) {
-        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "No SNI header found");
-    } else if (error_code == -3) {
-        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "invalid TLS client hello");
-    } else if (error_code == -4) {
-        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "invalid TLS packet");
     } else {
-        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "Unknown error");
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS parsing error code %d", error_code);
     }
 
     return error_code;

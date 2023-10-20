@@ -17,8 +17,11 @@ int is_sni_found_and_blocked(
     memset(sn, 0, FQDN_LENGTH);
     *sn = 0;
 
-    get_server_name(pkt, length, tls, sn);
+    int error_code = get_server_name(pkt, length, tls, sn);
 
+    if (error_code < 0) {
+        report_tls_parsing_error(args, error_code);
+    }
     if (strlen(sn) == 0) {
         log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found");
         return 0;
