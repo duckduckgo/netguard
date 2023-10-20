@@ -230,6 +230,8 @@ void log_packet(const struct arguments *args, const packet_t *packet);
 void dns_resolved(const struct arguments *args,
                   const char *qname, const char *aname, const char *resource, int ttl);
 
+void report_tls_parsing_error(const struct arguments *args, jint error_code);
+
 jboolean is_domain_blocked(const struct arguments *args, const char *name, jint uid);
 
 jint get_uid_q(const struct arguments *args,
