@@ -19,9 +19,10 @@ int is_sni_found_and_blocked(
 
     int error_code = get_server_name(pkt, length, tls, sn);
 
-    if (error_code < 0) {
-        report_tls_parsing_error(args, error_code);
-    }
+    // TODO do not report errors back for now see https://app.asana.com/0/488551667048375/1205803419871701/f
+//    if (error_code < 0) {
+//        report_tls_parsing_error(args, error_code);
+//    }
     if (strlen(sn) == 0) {
         log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found");
         return 0;
