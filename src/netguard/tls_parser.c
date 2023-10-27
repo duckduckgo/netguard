@@ -173,6 +173,11 @@ static int parse_server_name_extension(const uint8_t *data, size_t data_len, cha
 
         switch (data[pos]) { /* name type */
             case 0x00: /* host_name */
+                if (len > FQDN_LENGTH) {
+                    log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS SNI too long %d", len);
+                    *hostname = 0;
+                    return -33;
+                }
                 strncpy(hostname, (const char *)(data + pos + 3), len);
                 (hostname)[len] = '\0';
                 return len;

@@ -1,0 +1,38 @@
+name: CI Workflow
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  tls_tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      - name: Build Test Executable
+        working-directory: ./src/test
+        run: pwd;make clean all
+
+      - name: Run Tests
+        working-directory: ./src/test
+        run: ./test_tls
+
+      - name: Report Test Results
+        run: |
+          if [ $? -eq 0 ]; then
+            echo "All tests passed!"
+          else
+            echo "Tests failed!"
+            exit 1
+          fi
+
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-tls-results
+          path: test-tls-results.zip
