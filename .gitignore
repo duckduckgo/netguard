@@ -4,3 +4,4 @@
 CMakeCache.txt
 src/.vscode/
 *.o
+*test_tls

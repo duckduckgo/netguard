@@ -1,7 +1,7 @@
 CC = gcc
 CFLAGS = -Wall -Wimplicit-function-declaration -I../netguard/include
 
-SRC = test_tls.c ../netguard/tls_parser.c
+SRC = test_tls.c stubs.c ../netguard/tls_parser.c
 OBJ = $(SRC:.c=.o)
 EXECUTABLE = test_tls
 
