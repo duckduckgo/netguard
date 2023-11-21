@@ -7,7 +7,7 @@ uint16_t calc_checksum(uint16_t start, const uint8_t *buffer, size_t length);
 
 int compare_u32(uint32_t seq1, uint32_t seq2);
 
-int sdk_int(JNIEnv *env);
+//int sdk_int(JNIEnv *env);
 
 void hex2bytes(const char *hex, uint8_t *buffer);
 
