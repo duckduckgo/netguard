@@ -376,14 +376,14 @@ const unsigned char bad_data_3[] = {
         0x16, 0x03, 0x01, 0x00
 };
 
-const unsigned char bad_data_4[] = {
+const unsigned char sni_invalid_utf[] = {
         // TLS record
         0x16, // Content Type: Handshake
         0x03, 0x01, // Version: TLS 1.0
-        0x00, 0x48, // Length
+        0x00, 0x47, // Length
         // Handshake
         0x01, // Handshake Type: Client Hello
-        0x00, 0x00, 0x42, // Length
+        0x00, 0x00, 0x41, // Length
         0x03, 0x03, // Version: TLS 1.2
         // Random
         0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
@@ -396,7 +396,7 @@ const unsigned char bad_data_4[] = {
         0x00, 0xff, // RENEGOTIATION INFO SCSV
         0x01, // Compression Methods
         0x00, // NULL
-        0x00, 0x17, // Extensions Length
+        0x00, 0x16, // Extensions Length
         // Extension
         0x00, 0x00, // Extension Type: Server Name
         0x00, 0x0e, // Length
@@ -404,11 +404,10 @@ const unsigned char bad_data_4[] = {
         0x00, // Server Name Type: host_name
         0x00, 0x09, // Length
         // "localhost"
-        0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x68, 0x6f, 0x73, 0x74,
+        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
         // Extension
-        0x00, 0x0f, // Extension Type: Heart Beat
-        0x00, 0x01, // Length
-        0x01 // Mode: Peer allows to send requests
+        0x00, 0x23, // Extension Type: Session Ticket TLS
+        0x00, 0x00, // Length
 };
 
 const unsigned char wrong_sni_length[] = {
@@ -569,7 +568,7 @@ int main() {
     error = get_server_name(pkt, sizeof(bad_data_2), pkt, sn);
     assert(strcmp("localhost", sn) != 0);
     assert(strlen(sn) == 0);
-    assert(error == -30);
+    assert(error == -31);
 
     pkt = (uint8_t *)bad_data_3;
     memset(sn, 0, FQDN_LENGTH);
@@ -585,7 +584,7 @@ int main() {
     error = get_server_name(pkt, sizeof(wrong_sni_length), pkt, sn);
     assert(strcmp("localhost", sn) != 0);
     assert(strlen(sn) == 0);
-    assert(error == -30);
+    assert(error == -33);
 
     pkt = (uint8_t *)fragmentedSNI2;
     memset(sn, 0, FQDN_LENGTH);
@@ -602,6 +601,14 @@ int main() {
     assert(strcmp("localhost", sn) == 0);
     assert(strlen(sn) == 9);
     assert(error == 9);
+
+    pkt = (uint8_t *)sni_invalid_utf;
+    memset(sn, 0, FQDN_LENGTH);
+    *sn = 0;
+    error = get_server_name(pkt, sizeof(sni_invalid_utf), pkt, sn);
+    assert(strcmp("localhost", sn) != 0);
+    assert(strlen(sn) == 0);
+    assert(error == -34);
 
     return 0;
 }
