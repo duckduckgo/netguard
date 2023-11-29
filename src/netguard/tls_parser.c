@@ -71,7 +71,7 @@ static int parse_tls_server_name(const uint8_t *data, const size_t data_len, cha
 
     /* TLS record length */
     size_t len = ntohs(*((uint16_t *) (data + 3))) + TLS_HEADER_LEN;
-    log_print(PLATFORM_LOG_PRIORITY_INFO, "data len %d, record len %d\n", data_len, len);
+//    data_len = MIN(len, data_len);
     if (data_len < len) {
         // purposely don't return as we have checks later on
         log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS data length smaller than expected, proceed anyways");
@@ -79,9 +79,9 @@ static int parse_tls_server_name(const uint8_t *data, const size_t data_len, cha
 
     /* handshake */
     size_t pos = TLS_HEADER_LEN;
-    if (pos + 1 > data_len) {
-        return -5;
-    }
+//    if (pos + 1 > data_len) {
+//        return -5;
+//    }
 
     if (data[pos] != 0x1) {
         // not a client hello
@@ -98,17 +98,17 @@ static int parse_tls_server_name(const uint8_t *data, const size_t data_len, cha
     pos += 38;
 
     // Session ID
-    if (pos + 1 > data_len) return -7;
+//    if (pos + 1 > data_len) return -7;
     len = (size_t)data[pos];
     pos += 1 + len;
 
     /* Cipher Suites */
-    if (pos + 2 > data_len) return -8;
+//    if (pos + 2 > data_len) return -8;
     len = ntohs(*((uint16_t *) (data + pos)));
     pos += 2 + len;
 
     /* Compression Methods */
-    if (pos + 1 > data_len) return -9;
+//    if (pos + 1 > data_len) return -9;
     len = (size_t)data[pos];
     pos += 1 + len;
 
@@ -118,17 +118,15 @@ static int parse_tls_server_name(const uint8_t *data, const size_t data_len, cha
     }
 
     /* Extensions */
-    if (pos + 2 > data_len) {
-        return -11;
-    }
+//    if (pos + 2 > data_len) {
+//        return -11;
+//    }
     len = ntohs(*((uint16_t *) (data + pos)));
     pos += 2;
 
-    if (pos + len > data_len) {
-        // Possibly a TLS fragmented record, continue anyways to see if we find SNI in the fragment
-        log_print(PLATFORM_LOG_PRIORITY_WARN, "Out of bounds at extensions length, pos(%d) + len(%d) > data_len(%d)", pos, len, data_len);
+//    if (pos + len > data_len) {
 //        return -12;
-    }
+//    }
     return parse_extensions(data + pos, len, server_name);
 }
 
@@ -145,8 +143,8 @@ static int parse_extensions(const uint8_t *data, size_t data_len, char *hostname
         if (data[pos] == 0x00 && data[pos + 1] == 0x00) {
             /* There can be only one extension of each type, so we break
                our state and move p to beinnging of the extension here */
-            if (pos + 4 + len > data_len)
-                return -20;
+//            if (pos + 4 + len > data_len)
+//                return -20;
             return parse_server_name_extension(data + pos + 4, len, hostname);
         }
         pos += 4 + len; /* Advance to the next extension header */
@@ -165,9 +163,9 @@ static int parse_server_name_extension(const uint8_t *data, size_t data_len, cha
     while (pos + 3 < data_len) {
         len = ntohs(*((uint16_t *) (data + pos + 1)));
 
-        if (pos + 3 + len > data_len) {
-            return -30;
-        }
+//        if (pos + 3 + len > data_len) {
+//            return -30;
+//        }
 
         switch (data[pos]) { /* name type */
             case 0x00: /* host_name */
