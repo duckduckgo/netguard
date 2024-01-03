@@ -292,10 +292,11 @@ void *handle_events(void *a) {
         log_print(PLATFORM_LOG_PRIORITY_ERROR,
                     "epoll close error %d: %s", errno, strerror(errno));
 
+    log_print(PLATFORM_LOG_PRIORITY_WARN, "Stopped events tun=%d", args->tun);
+
     // Cleanup
     ng_free(args, __FILE__, __LINE__);
 
-    log_print(PLATFORM_LOG_PRIORITY_WARN, "Stopped events tun=%d", args->tun);
     return NULL;
 }
 
