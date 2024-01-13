@@ -51,6 +51,7 @@ mavenPublishing {
 
 android {
     compileSdk 32
+    ndkVersion "21.4.7075529"
 
     defaultConfig {
         minSdk 23
