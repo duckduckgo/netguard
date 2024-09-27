@@ -22,8 +22,10 @@ Implementation of the TUN device interface for Android (wraps linux one)
 
 
 // #include <android/log.h>
+// #include <stdlib.h>  // For C.free and C string functions
 // extern int is_pkt_allowed(char *buffer, int length);
 // extern int wg_write_pcap(char *buffer, int length);
+// extern int record_malware_block(const char *domain);
 import "C"
 
 import (
@@ -50,10 +52,53 @@ func (tunWrapper *NativeTunWrapper) Name() (string, error) {
     return tunWrapper.nativeTun.Name()
 }
 
-func (tunWrapper *NativeTunWrapper) Write(buf [][]byte, offset int) (int, error) {
-    pktLen, err :=  tunWrapper.nativeTun.Write(buf, offset)
+func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error) {
+    tag := cstring("WireGuard/GoBackend/Write")
 
-//     tag := cstring("WireGuard/GoBackend/Write")
+        for _, buf := range bufs {
+            // Check if it's an IPv4 packet
+            if len(buf) <= offset {
+                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping invalid packet, too short"))
+                continue
+            }
+            switch buf[offset] >> 4 {
+            case ipv4.Version:
+                if len(buf) < ipv4.HeaderLen {
+                    C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 packet"))
+                    continue
+                }
+
+                // Check if it's a UDP packet
+                protocol := buf[offset+9]
+                if protocol == 0x11 { // UDP
+                    // Extract the ports (skip IP and check transport layer headers)
+                    srcPort := (uint16(buf[offset+ipv4.HeaderLen]) << 8) | uint16(buf[offset+ipv4.HeaderLen+1])
+                    dstPort := (uint16(buf[offset+ipv4.HeaderLen+2]) << 8) | uint16(buf[offset+ipv4.HeaderLen+3])
+
+                    if srcPort == 53 || dstPort == 53 {
+                        // Extract the DNS data (skip IP and UDP headers)
+                        dnsData := buf[offset+ipv4.HeaderLen+8:]
+
+                        // Call the helper function to check if the DNS packet should be blocked
+                        shouldBlock, blockedDomain := WasDNSMalwareBlocked(dnsData)
+                        if shouldBlock {
+                            logMessage := "DNS malware was blocked for domain: " + blockedDomain + " due to 'blocked:m' TXT record"
+                            C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring(logMessage))
+
+                            // call back into JVM and let the packet flow normally
+                            cBlockedDomain := C.CString(blockedDomain)
+                            defer C.free(unsafe.Pointer(cBlockedDomain))
+                            C.record_malware_block(cBlockedDomain) // ignore return code
+                        }
+                    }
+                }
+            default:
+                // Not an IPv4 packet
+                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Invalid IP"))
+            }
+        }
+
+    pktLen, err :=  tunWrapper.nativeTun.Write(bufs, offset)
 
     // PCAP recording
 //     pcap_res := int(C.wg_write_pcap((*C.char)(unsafe.Pointer(&buf[offset])), C.int(pktLen+offset)))

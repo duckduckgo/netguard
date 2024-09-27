@@ -18,6 +18,7 @@ extern char *wgVersion();
 static JavaVM *JVM = NULL;
 static jobject GO_BACKEND = NULL;
 static jmethodID MID_SHOULD_ALLOW = NULL;
+static jmethodID MID_RECORD_MALWARE_BLOCK = NULL;
 static jint SDK = 0;
 
 JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOn(JNIEnv *env, jobject  goBackend, jstring ifname,
@@ -39,6 +40,7 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOn(JNI
     jclass clsGoBackend = (*env)->GetObjectClass(env, goBackend);
     const char *shouldAllowSig = "(ILjava/lang/String;ILjava/lang/String;ILjava/lang/String;I)Z";
     MID_SHOULD_ALLOW = jniGetMethodID(env, clsGoBackend, "shouldAllow", shouldAllowSig);
+    MID_RECORD_MALWARE_BLOCK = jniGetMethodID(env, clsGoBackend, "recordMalwareBlock", "(Ljava/lang/String;)V");
     (*env)->DeleteLocalRef(env, clsGoBackend);
 
     // Call Go method
@@ -135,6 +137,31 @@ int is_pkt_allowed(const uint8_t *buffer, int length) {
         return 0;
 
     return 1;
+}
+
+int record_malware_block(const char *domain) {
+    if (MID_RECORD_MALWARE_BLOCK == NULL) {
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "MID_RECORD_MALWARE_BLOCK method not found");
+        return 1;
+    }
+
+    JNIEnv *env;
+    jint rs = (*JVM)->AttachCurrentThread(JVM, &env, NULL);
+    if (rs != JNI_OK) {
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "Could not attach to JVM thread");
+        return 1;
+    }
+
+    // Prep call to Kotlin
+    jstring jdomain = (*env)->NewStringUTF(env, domain);
+    (*env)->CallVoidMethod(env, GO_BACKEND, MID_RECORD_MALWARE_BLOCK, jdomain);
+    jniCheckException(env);
+
+    // cleanup
+    (*env)->DeleteLocalRef(env, jdomain);
+
+    return 0;
+
 }
 
 JNIEXPORT void JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOff(JNIEnv *env, jclass c, jint handle)
