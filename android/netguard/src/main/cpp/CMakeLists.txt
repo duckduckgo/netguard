@@ -62,6 +62,9 @@ target_link_libraries( # Specifies the target library.
                        # included in the NDK.
                        ${log-lib} )
 
+#Ensure 16KB compatibility
+target_link_options(netguard PRIVATE "-Wl,-z,max-page-size=16384")
+
 # Makefile requires this to be with "/" to link correctly
 file(TO_CMAKE_PATH ${CMAKE_LIBRARY_OUTPUT_DIRECTORY} OUT_PATH_CMAKE)
 add_custom_target(libwg-go.so WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../src/wireguard" COMMENT "Building wireguard-go" VERBATIM COMMAND make
@@ -73,7 +76,7 @@ add_custom_target(libwg-go.so WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../
         ANDROID_PACKAGE_NAME=${ANDROID_PACKAGE_NAME}
         GRADLE_USER_HOME=${GRADLE_USER_HOME}
         CFLAGS=${CMAKE_C_FLAGS}\ -Wno-unused-command-line-argument
-        LDFLAGS=${CMAKE_SHARED_LINKER_FLAGS}\ -fuse-ld=gold
+        LDFLAGS=${CMAKE_SHARED_LINKER_FLAGS}\ -fuse-ld=gold\ -Wl,-z,max-page-size=16384
         DESTDIR=${OUT_PATH_CMAKE}
         BUILDDIR=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/../generated-src
         )
