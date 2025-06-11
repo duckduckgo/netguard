@@ -57,14 +57,14 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
     tag := cstring("WireGuard/GoBackend/Write")
 
         for _, buf := range bufs {
-            // Check if it's an IPv4 packet
+            // Skip uninitialized or empty buffers
             if len(buf) <= offset {
                 C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping invalid packet, too short"))
                 continue
             }
             switch buf[offset] >> 4 {
             case ipv4.Version:
-                if len(buf) < ipv4.HeaderLen {
+                if len(buf) < offset+ipv4.HeaderLen {
                     C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 packet"))
                     continue
                 }
@@ -72,6 +72,11 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
                 // Check if it's a UDP packet
                 protocol := buf[offset+9]
                 if protocol == 0x11 { // UDP
+                    // Extract UDP ports
+                    if len(buf) < offset+ipv4.HeaderLen+8 {
+                        C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping short UDP packet"))
+                        continue
+                    }
                     // Extract the ports (skip IP and check transport layer headers)
                     srcPort := (uint16(buf[offset+ipv4.HeaderLen]) << 8) | uint16(buf[offset+ipv4.HeaderLen+1])
                     dstPort := (uint16(buf[offset+ipv4.HeaderLen+2]) << 8) | uint16(buf[offset+ipv4.HeaderLen+3])
@@ -94,8 +99,8 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
                     }
                 }
             default:
-                // Not an IPv4 packet
-                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Invalid IP"))
+                // Either not an IP packet or unsupported version
+                logInvalidPacket(buf, offset, len(buf)-offset, tag)
             }
         }
 
