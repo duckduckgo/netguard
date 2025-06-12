@@ -9,7 +9,8 @@ Download
 implementation 'com.duckduckgo.netguard:netguard-android:<latest-version>'
 ```
 
-Snapshots of the development version are available in [Sonatype's `snapshots` repository](https://s01.oss.sonatype.org/content/repositories/snapshots).
+Snapshots of the development version are available in [Sonatype's `snapshots` repository](https://s01.oss.sonatype.org/content/repositories/snapshots/com/duckduckgo/netguard/netguard-android).
+Release versions are available in [Sonatype's `releases` repository](https://s01.oss.sonatype.org/content/repositories/releases/com/duckduckgo/netguard/netguard-android).
 
 License
 -------
