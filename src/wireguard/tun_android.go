@@ -31,6 +31,7 @@ import "C"
 import (
     "os"
     "unsafe"
+    "fmt"
 
     "golang.org/x/net/ipv4"
     "golang.zx2c4.com/wireguard/tun"
@@ -56,14 +57,14 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
     tag := cstring("WireGuard/GoBackend/Write")
 
         for _, buf := range bufs {
-            // Check if it's an IPv4 packet
+            // Skip uninitialized or empty buffers
             if len(buf) <= offset {
                 C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping invalid packet, too short"))
                 continue
             }
             switch buf[offset] >> 4 {
             case ipv4.Version:
-                if len(buf) < ipv4.HeaderLen {
+                if len(buf) < offset+ipv4.HeaderLen {
                     C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 packet"))
                     continue
                 }
@@ -71,6 +72,11 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
                 // Check if it's a UDP packet
                 protocol := buf[offset+9]
                 if protocol == 0x11 { // UDP
+                    // Extract UDP ports
+                    if len(buf) < offset+ipv4.HeaderLen+8 {
+                        C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping short UDP packet"))
+                        continue
+                    }
                     // Extract the ports (skip IP and check transport layer headers)
                     srcPort := (uint16(buf[offset+ipv4.HeaderLen]) << 8) | uint16(buf[offset+ipv4.HeaderLen+1])
                     dstPort := (uint16(buf[offset+ipv4.HeaderLen+2]) << 8) | uint16(buf[offset+ipv4.HeaderLen+3])
@@ -93,8 +99,8 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
                     }
                 }
             default:
-                // Not an IPv4 packet
-                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Invalid IP"))
+                // Either not an IP packet or unsupported version
+                logInvalidPacket(buf, offset, len(buf)-offset, tag)
             }
         }
 
@@ -119,37 +125,48 @@ func (tunWrapper *NativeTunWrapper) Flush() error {
 // A nonzero offset can be used to instruct the Device on where to begin
 // reading into each element of the bufs slice.
 func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int) (int, error) {
+    // Read packets from the TUN device into bufs.
     n, err := tunWrapper.nativeTun.Read(bufs, sizes, offset)
 
     tag := cstring("WireGuard/GoBackend/Read")
 
+    // If no packets read, return immediately.
     if n == 0 {
         return n, err
     }
 
-    for i, buf := range bufs {
+    // Only process the 'n' packets returned by the TUN read.
+    for i :=0; i < n; i++ {
+        buf := bufs[i]
+        // Defensive check: skip if size is 0 or offset is out of bounds.
+        if sizes[i] == 0 || len(buf) <= offset {
+            sizes[i] = 0
+            continue
+        }
+        // Determine IP version from first nibble (high 4 bits) of first byte.
         switch buf[offset] >> 4 {
             case ipv4.Version:
+                // Skip malformed IPv4 packets.
                 if len(buf) < ipv4.HeaderLen {
                     C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 pkt"))
                     sizes[i] = 0
                 } else {
-                    // Check if TCP
+                    // Check the IP protocol field (offset + 9 for IPv4).
                     protocol := buf[offset + 9]
                     if protocol == 0x06 {
-                        // Skip checking with AppTP since for now we only check TCP connections
+                        // Use native function to decide whether to allow this packet.
                         allow := int(C.is_pkt_allowed((*C.char)(unsafe.Pointer(&buf[offset])), C.int(sizes[i]+offset)))
                         if allow == 0 {
-                            // Returning 0 blocks the connection since we will not forward this packet
                             C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Blocking connection"))
-                            sizes[i] = 0
+                            sizes[i] = 0 // Set size to 0 to block packet.
                         }
                     }
                 }
 
             // TODO: IPv6
             default:
-                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Invalid IP"))
+                // Unknown or unsupported IP version — log details.
+                logInvalidPacket(buf, offset, sizes[i], tag)
         }
     }
 
@@ -160,6 +177,14 @@ func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int)
 //     }
 
     return n, err
+}
+
+func logInvalidPacket(buf []byte, offset int, size int, tag *C.char) {
+    version := buf[offset] >> 4
+    previewLen := min(20, len(buf)-offset)
+    headerPreview := buf[offset : offset+previewLen]
+    msg := fmt.Sprintf("Invalid IP packet: version=%d, size=%d, firstByte=0x%02x, preview=% x", version, size, buf[offset], headerPreview)
+    C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring(msg))
 }
 
 func (tunWrapper *NativeTunWrapper) Events() <-chan tun.Event {

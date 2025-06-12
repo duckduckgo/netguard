@@ -1,16 +1,18 @@
 module golang.zx2c4.com/wireguard/android
 
-go 1.18
+go 1.23.1
+
+toolchain go1.24.4
 
 require (
-	golang.org/x/net v0.27.0
-	golang.org/x/sys v0.22.0
-	golang.zx2c4.com/wireguard v0.0.0-20230325221338-052af4a8072b
+	github.com/miekg/dns v1.1.62
+	golang.org/x/net v0.39.0
+	golang.org/x/sys v0.32.0
+	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
 )
 
 require (
-	github.com/miekg/dns v1.1.62 // indirect
-	golang.org/x/crypto v0.25.0 // indirect
+	golang.org/x/crypto v0.37.0 // indirect
 	golang.org/x/mod v0.18.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
