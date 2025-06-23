@@ -1,7 +1,7 @@
 plugins {
     id 'com.android.library'
     id 'org.jetbrains.kotlin.android'
-    id "com.vanniktech.maven.publish" version "0.23.1"
+    id "com.vanniktech.maven.publish" version "0.33.0"
 }
 
 //apply plugin: 'maven-publish'
@@ -15,8 +15,8 @@ def getVersionName = { ->
 import com.vanniktech.maven.publish.SonatypeHost
 
 mavenPublishing {
-    // publishing to https://s01.oss.sonatype.org
-    publishToMavenCentral(SonatypeHost.S01, true)
+    // publishing to Central Portal
+    publishToMavenCentral()
 
     signAllPublications()
 
