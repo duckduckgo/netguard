@@ -63,7 +63,11 @@ target_link_libraries( # Specifies the target library.
                        ${log-lib} )
 
 #Ensure 16KB compatibility
-target_link_options(netguard PRIVATE "-Wl,-z,max-page-size=16384")
+target_link_options(
+  netguard 
+  PRIVATE 
+  "-Wl,-z,common-page-size=16384"
+  "-Wl,-z,max-page-size=16384")
 
 # Makefile requires this to be with "/" to link correctly
 file(TO_CMAKE_PATH ${CMAKE_LIBRARY_OUTPUT_DIRECTORY} OUT_PATH_CMAKE)
