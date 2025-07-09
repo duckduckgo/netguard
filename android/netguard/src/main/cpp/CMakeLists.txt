@@ -76,7 +76,7 @@ add_custom_target(libwg-go.so WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../
         ANDROID_PACKAGE_NAME=${ANDROID_PACKAGE_NAME}
         GRADLE_USER_HOME=${GRADLE_USER_HOME}
         CFLAGS=${CMAKE_C_FLAGS}\ -Wno-unused-command-line-argument
-        LDFLAGS=${CMAKE_SHARED_LINKER_FLAGS}\ -fuse-ld=gold\ -Wl,-z,max-page-size=16384
+        LDFLAGS=${CMAKE_SHARED_LINKER_FLAGS}\ -fuse-ld=gold\ -Wl,-z,max-page-size=16384\ -Wl,-z,common-page-size=16384
         DESTDIR=${OUT_PATH_CMAKE}
         BUILDDIR=${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/../generated-src
         )
