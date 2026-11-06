@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -Wall -Wimplicit-function-declaration -I../netguard/include
-SANITIZERS = -fsanitize=address,undefined -fno-omit-frame-pointer -g
+SANITIZERS = -fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer -g
 
 # Override to run the split and fuzz tests against another parser version, e.g. make test_tls_split TLS_PARSER=/path/to/tls_parser.c
 TLS_PARSER ?= ../netguard/tls_parser.c

@@ -36,7 +36,7 @@ const char *__asan_default_options(void) {
     return "exitcode=86";
 }
 
-// Same as the tun buffer allocated in handle_events (MTU)
+// Same as the tun buffer allocated in check_tun (MTU)
 #define TUN_BUFFER_SIZE 10000
 
 // TCP payload sizes: minimum IPv4 MSS, then common MSS values for 1280-1500 MTUs

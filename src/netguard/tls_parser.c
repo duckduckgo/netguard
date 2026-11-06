@@ -172,7 +172,7 @@ static int parse_server_name_extension(const uint8_t *data, size_t data_len, cha
             case 0x00: /* host_name */
                 // hostname is FQDN_LENGTH long, including the null terminator
                 if (len >= FQDN_LENGTH) {
-                    log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS SNI too long %d", len);
+                    log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS SNI too long %zu", len);
                     *hostname = 0;
                     return -33;
                 }
