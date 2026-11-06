@@ -684,6 +684,7 @@ jboolean handle_tcp(const struct arguments *args,
     const struct iphdr *ip4 = (struct iphdr *) pkt;
     const struct ip6_hdr *ip6 = (struct ip6_hdr *) pkt;
     const struct tcphdr *tcphdr = (struct tcphdr *) payload;
+    // handle_ip dropped packets whose header length is invalid, so this fits in the packet
     const uint8_t tcpoptlen = (uint8_t) ((tcphdr->doff - 5) * 4);
     const uint8_t *tcpoptions = payload + sizeof(struct tcphdr);
     const uint8_t *data = payload + sizeof(struct tcphdr) + tcpoptlen;

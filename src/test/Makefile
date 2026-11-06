@@ -11,8 +11,9 @@ EXECUTABLE = test_tls
 SPLIT_EXECUTABLE = test_tls_split
 FUZZ_EXECUTABLE = test_tls_fuzz
 TCP_WINDOW_EXECUTABLE = test_tcp_window
+PACKET_HEADERS_EXECUTABLE = test_packet_headers
 
-all: $(EXECUTABLE) $(SPLIT_EXECUTABLE) $(FUZZ_EXECUTABLE) $(TCP_WINDOW_EXECUTABLE)
+all: $(EXECUTABLE) $(SPLIT_EXECUTABLE) $(FUZZ_EXECUTABLE) $(TCP_WINDOW_EXECUTABLE) $(PACKET_HEADERS_EXECUTABLE)
 
 $(EXECUTABLE): $(OBJ)
 	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS)
@@ -27,6 +28,9 @@ $(FUZZ_EXECUTABLE): test_tls_fuzz.c client_hellos.h stubs.c $(TLS_PARSER)
 $(TCP_WINDOW_EXECUTABLE): test_tcp_window.c ../netguard/include/tcp_window.h
 	$(CC) $(CFLAGS) $(SANITIZERS) test_tcp_window.c -o $@ $(LDFLAGS)
 
+$(PACKET_HEADERS_EXECUTABLE): test_packet_headers.c ../netguard/include/packet_headers.h
+	$(CC) $(CFLAGS) $(SANITIZERS) test_packet_headers.c -o $@ $(LDFLAGS)
+
 # Not a dependency of the build on purpose: the fixtures depend on the local OpenSSL version
 fixtures:
 	python3 -I gen_client_hellos.py > client_hellos.h
@@ -35,6 +39,6 @@ fixtures:
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(OBJ) $(EXECUTABLE) $(SPLIT_EXECUTABLE) $(FUZZ_EXECUTABLE) $(TCP_WINDOW_EXECUTABLE) *.dSYM
+	rm -rf $(OBJ) $(EXECUTABLE) $(SPLIT_EXECUTABLE) $(FUZZ_EXECUTABLE) $(TCP_WINDOW_EXECUTABLE) $(PACKET_HEADERS_EXECUTABLE) *.dSYM
 
 .PHONY: all clean fixtures

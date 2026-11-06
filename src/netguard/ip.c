@@ -19,6 +19,7 @@
 
 #include "netguard.h"
 #include "uid_mapping.h"
+#include "packet_headers.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Definitions
@@ -164,8 +165,12 @@ static void handle_ip(const struct arguments *args,
             return;
         }
 
-        uint8_t ipoptlen = (uint8_t) ((ip4hdr->ihl - 5) * 4);
-        payload = (uint8_t *) (pkt + sizeof(struct iphdr) + ipoptlen);
+        size_t ip4hlen = ip4_header_length(pkt, length);
+        if (ip4hlen == 0) {
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "IP4 invalid header length %u", ip4hdr->ihl);
+            return;
+        }
+        payload = (uint8_t *) (pkt + ip4hlen);
 
         if (ntohs(ip4hdr->tot_len) != length) {
             log_print(PLATFORM_LOG_PRIORITY_ERROR, "Invalid length %u header length %u",
@@ -256,6 +261,11 @@ static void handle_ip(const struct arguments *args,
     } else if (protocol == IPPROTO_TCP) {
         if (length - (payload - pkt) < sizeof(struct tcphdr)) {
             log_print(PLATFORM_LOG_PRIORITY_WARN, "TCP packet too short");
+            return;
+        }
+
+        if (tcp_header_length(payload, length - (payload - pkt)) == 0) {
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "TCP invalid header length");
             return;
         }
 
