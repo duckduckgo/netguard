@@ -8,4 +8,5 @@ src/.vscode/
 .claude/
 CLAUDE.md
 test_tls_split
+test_tls_fuzz
 *.dSYM
