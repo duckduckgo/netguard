@@ -38,4 +38,40 @@ static inline size_t tcp_header_length(const uint8_t *tcp, size_t length) {
     return header_length;
 }
 
+/**
+ * Reads the MSS and window scale from the options of a TCP SYN. mss and ws are left unchanged when not present.
+ *
+ * Each option is a kind byte, a length byte (covering kind and length) and a value, except kind 0 (end of
+ * options) and kind 1 (one byte of padding). Parsing stops at the first malformed option: a length under 2
+ * would never move forward, and one running past the options would read past them.
+ *
+ * Window scales over 14 are read as 14 (RFC 7323, section 2.3).
+ */
+static inline void tcp_parse_syn_options(const uint8_t *options, size_t length, uint16_t *mss, uint8_t *ws) {
+    size_t pos = 0;
+    while (pos < length) {
+        uint8_t kind = options[pos];
+        if (kind == 0) {
+            break;
+        }
+        if (kind == 1) {
+            pos++;
+            continue;
+        }
+        if (pos + 2 > length) {
+            break;
+        }
+        uint8_t len = options[pos + 1];
+        if (len < 2 || pos + len > length) {
+            break;
+        }
+        if (kind == 2 && len == 4) {
+            *mss = (uint16_t) ((options[pos + 2] << 8) | options[pos + 3]);
+        } else if (kind == 3 && len == 3) {
+            *ws = options[pos + 2] < 14 ? options[pos + 2] : 14;
+        }
+        pos += len;
+    }
+}
+
 #endif // PACKET_HEADERS_H
