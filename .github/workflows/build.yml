@@ -29,6 +29,8 @@ jobs:
 
       - name: Setup Android
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       - name: Install CMake 3.18.1
         run: yes | sdkmanager "cmake;3.18.1"
