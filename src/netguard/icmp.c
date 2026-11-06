@@ -298,8 +298,10 @@ static int open_icmp_socket(const struct arguments *args, const struct icmp_sess
     }
 
     // Protect socket
-    if (protect_socket(args, sock) < 0)
+    if (protect_socket(args, sock) < 0) {
+        close(sock);
         return -1;
+    }
 
     return sock;
 }

@@ -818,6 +818,10 @@ jboolean handle_tcp(const struct arguments *args,
             s->socket = open_tcp_socket(args, &s->tcp, redirect);
             if (s->socket < 0) {
                 // Remote might retry
+                if (s->tcp.forward != NULL) {
+                    ng_free(s->tcp.forward->data, __FILE__, __LINE__);
+                    ng_free(s->tcp.forward, __FILE__, __LINE__);
+                }
                 ng_free(s, __FILE__, __LINE__);
                 return 0;
             }
@@ -1101,8 +1105,10 @@ static int open_tcp_socket(const struct arguments *args,
     }
 
     // Protect
-    if (protect_socket(args, sock) < 0)
+    if (protect_socket(args, sock) < 0) {
+        close(sock);
         return -1;
+    }
 
     int on = 1;
     if (setsockopt(sock, SOL_TCP, TCP_NODELAY, &on, sizeof(on)) < 0)
@@ -1114,6 +1120,7 @@ static int open_tcp_socket(const struct arguments *args,
     if (flags < 0 || fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "fcntl socket O_NONBLOCK error %d: %s",
                     errno, strerror(errno));
+        close(sock);
         return -1;
     }
 
@@ -1169,6 +1176,7 @@ static int open_tcp_socket(const struct arguments *args,
                                    : sizeof(struct sockaddr_in6)));
     if (err < 0 && errno != EINPROGRESS) {
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "connect error %d: %s", errno, strerror(errno));
+        close(sock);
         return -1;
     }
 
