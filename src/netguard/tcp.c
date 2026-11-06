@@ -18,6 +18,7 @@
 */
 
 #include "netguard.h"
+#include "tcp_window.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Definitions
@@ -1323,7 +1324,7 @@ static ssize_t write_tcp(const struct arguments *args, const struct tcp_session 
     tcp->ack = (__u16) ack;
     tcp->fin = (__u16) fin;
     tcp->rst = (__u16) rst;
-    tcp->window = htons(cur->recv_window >> cur->recv_scale);
+    tcp->window = htons(tcp_window_field(cur->recv_window, cur->recv_scale, syn));
 
     if (!tcp->ack)
         tcp->ack_seq = 0;

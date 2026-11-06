@@ -19,7 +19,11 @@ jobs:
 
       - name: Run Tests
         working-directory: ./src/test
-        run: ./test_tls
+        run: |
+          ./test_tls
+          ./test_tls_split
+          ./test_tls_fuzz
+          ./test_tcp_window
 
       - name: Report Test Results
         run: |

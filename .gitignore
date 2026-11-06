@@ -7,3 +7,7 @@ src/.vscode/
 *test_tls
 .claude/
 CLAUDE.md
+test_tls_split
+test_tls_fuzz
+test_tcp_window
+*.dSYM

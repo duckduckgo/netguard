@@ -1,7 +1,7 @@
 
 #include <stdio.h>
 #include <stdint.h>
-#include <string.h> /* strncpy() */
+#include <string.h> /* memcpy() */
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <netinet/in.h>
@@ -20,6 +20,16 @@ static int parse_server_name_extension(const uint8_t*, size_t, char *);
 #ifndef MIN
 #define MIN(X, Y) ((X) < (Y) ? (X) : (Y))
 #endif
+
+/*
+ * A ClientHello is often larger than a TCP segment (eg. post-quantum key shares) and we only get to see the
+ * segment in hand. The declared lengths (record, extensions) can then point past the end of the data.
+ * We parse whatever is present and never read past data_len: the SNI is found as long as it is in this segment.
+ */
+
+static size_t read_u16(const uint8_t *data) {
+    return ((size_t) data[0] << 8) | (size_t) data[1];
+}
 
 
 /**
@@ -70,18 +80,17 @@ static int parse_tls_server_name(const uint8_t *data, const size_t data_len, cha
     }
 
     /* TLS record length */
-    size_t len = ntohs(*((uint16_t *) (data + 3))) + TLS_HEADER_LEN;
-//    data_len = MIN(len, data_len);
+    size_t len = read_u16(data + 3) + TLS_HEADER_LEN;
     if (data_len < len) {
-        // purposely don't return as we have checks later on
-        log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS data length smaller than expected, proceed anyways");
+        // ClientHello split across TCP segments, the SNI may still be in this one
+        log_print(PLATFORM_LOG_PRIORITY_DEBUG, "TLS data length smaller than expected, proceed anyways");
     }
 
     /* handshake */
     size_t pos = TLS_HEADER_LEN;
-//    if (pos + 1 > data_len) {
-//        return -5;
-//    }
+    if (pos + 1 > data_len) {
+        return -5;
+    }
 
     if (data[pos] != 0x1) {
         // not a client hello
@@ -98,17 +107,17 @@ static int parse_tls_server_name(const uint8_t *data, const size_t data_len, cha
     pos += 38;
 
     // Session ID
-//    if (pos + 1 > data_len) return -7;
+    if (pos + 1 > data_len) return -7;
     len = (size_t)data[pos];
     pos += 1 + len;
 
     /* Cipher Suites */
-//    if (pos + 2 > data_len) return -8;
-    len = ntohs(*((uint16_t *) (data + pos)));
+    if (pos + 2 > data_len) return -8;
+    len = read_u16(data + pos);
     pos += 2 + len;
 
     /* Compression Methods */
-//    if (pos + 1 > data_len) return -9;
+    if (pos + 1 > data_len) return -9;
     len = (size_t)data[pos];
     pos += 1 + len;
 
@@ -118,16 +127,14 @@ static int parse_tls_server_name(const uint8_t *data, const size_t data_len, cha
     }
 
     /* Extensions */
-//    if (pos + 2 > data_len) {
-//        return -11;
-//    }
-    len = ntohs(*((uint16_t *) (data + pos)));
+    if (pos + 2 > data_len) {
+        return -11;
+    }
+    len = read_u16(data + pos);
     pos += 2;
 
-//    if (pos + len > data_len) {
-//        return -12;
-//    }
-    return parse_extensions(data + pos, len, server_name);
+    // Extensions may continue in the next segment, only parse the ones present
+    return parse_extensions(data + pos, MIN(len, data_len - pos), server_name);
 }
 
 static int parse_extensions(const uint8_t *data, size_t data_len, char *hostname) {
@@ -137,15 +144,13 @@ static int parse_extensions(const uint8_t *data, size_t data_len, char *hostname
     /* Parse each 4 bytes for the extension header */
     while (pos + 4 <= data_len) {
         /* Extension Length */
-        len = ntohs(*((uint16_t *) (data + pos + 2)));
+        len = read_u16(data + pos + 2);
 
         /* Check if it's a server name extension */
         if (data[pos] == 0x00 && data[pos + 1] == 0x00) {
             /* There can be only one extension of each type, so we break
                our state and move p to beinnging of the extension here */
-//            if (pos + 4 + len > data_len)
-//                return -20;
-            return parse_server_name_extension(data + pos + 4, len, hostname);
+            return parse_server_name_extension(data + pos + 4, MIN(len, data_len - pos - 4), hostname);
         }
         pos += 4 + len; /* Advance to the next extension header */
     }
@@ -161,20 +166,21 @@ static int parse_server_name_extension(const uint8_t *data, size_t data_len, cha
     size_t len;
 
     while (pos + 3 < data_len) {
-        len = ntohs(*((uint16_t *) (data + pos + 1)));
-
-//        if (pos + 3 + len > data_len) {
-//            return -30;
-//        }
+        len = read_u16(data + pos + 1);
 
         switch (data[pos]) { /* name type */
             case 0x00: /* host_name */
-                if (len > FQDN_LENGTH) {
-                    log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS SNI too long %d", len);
+                // hostname is FQDN_LENGTH long, including the null terminator
+                if (len >= FQDN_LENGTH) {
+                    log_print(PLATFORM_LOG_PRIORITY_WARN, "TLS SNI too long %zu", len);
                     *hostname = 0;
                     return -33;
                 }
-                strncpy(hostname, (const char *)(data + pos + 3), len);
+                if (pos + 3 + len > data_len) {
+                    // Server name continues in the next segment
+                    return -30;
+                }
+                memcpy(hostname, data + pos + 3, len);
                 (hostname)[len] = '\0';
                 if (is_valid_utf8(hostname)) {
                     return len;
@@ -202,6 +208,9 @@ int get_server_name(
         const uint8_t *tls,
         char *server_name
 ) {
+    if (tls < pkt || tls > pkt + length) {
+        return -1;
+    }
     size_t data_len = length - (tls - pkt);
     int error_code = parse_tls_server_name(tls, data_len, server_name);
     if (error_code >= 0) {
