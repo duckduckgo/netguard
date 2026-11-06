@@ -25,7 +25,6 @@ add_library( netguard
         ../../../../../src/netguard/udp.c
         ../../../../../src/netguard/icmp.c
         ../../../../../src/netguard/dns.c
-        ../../../../../src/netguard/dhcp.c
         ../../../../../src/netguard/pcap.c
         ../../../../../src/netguard/memory.c
         ../../../../../src/netguard/socks5.c
