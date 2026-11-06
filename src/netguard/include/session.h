@@ -68,6 +68,7 @@ struct udp_session {
     __be16 dest; // network notation
 
     uint8_t state;
+    uint16_t pending_queries; // DNS queries waiting for an answer
 };
 
 struct icmp_session {
