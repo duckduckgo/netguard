@@ -16,24 +16,44 @@ shows which commits are in the snapshot, in each release and in the DuckDuckGo A
 
 ## Publishing a release
 
-1. Make sure what you want in the release is merged into `main`.
-2. Tag the commit on `main` and push the tag (only maintainers can push `X.Y.Z` tags):
-   ```bash
-   git tag -a 1.11.0 -m "1.11.0" <commit>
-   git push origin 1.11.0
-   ```
-3. The [release workflow](../.github/workflows/release.yml) then:
-   - checks the tag is `X.Y.Z` and on `main`, and runs the native tests on it;
-   - publishes the version to Maven Central, where it goes live without a manual step;
-   - waits until Maven Central serves it (up to 45 minutes);
-   - creates the GitHub Release, with notes from the PRs merged since the previous tag.
+Merge what you want in the release into `main`, then run:
+
+```bash
+tools/release
+```
+
+It shows the commits on `main` that aren't released yet (with their CI and whether the snapshot has them), lets you
+pick the newest one to include and the version (minor or patch), shows what will go out and asks before releasing.
+Then it tags that commit, pushes only the tag, and follows the release until it's on Maven Central. It needs `git`
+and `gh`, and only repository admins can push release tags. Without the questions:
+
+```bash
+tools/release minor                    # or patch, or an X.Y.Z version, from the latest main
+tools/release minor --commit <sha>     # from an earlier commit on main
+tools/release --dry-run                # show what would happen, without tagging
+```
+
+`tools/release` is a shortcut for tagging by hand, which works the same way:
+
+```bash
+git tag -a 1.11.0 -m "1.11.0" <commit on main>
+git push origin 1.11.0
+```
+
+Pushing the tag starts the [release workflow](../.github/workflows/release.yml), which:
+- checks the tag is `X.Y.Z` and on `main`, and runs the native tests on it;
+- publishes the version to Maven Central, where it goes live without a manual step;
+- waits until Maven Central serves it (up to 45 minutes);
+- creates the GitHub Release, with notes from the PRs merged since the previous tag.
 
 A patch release is the same: tag the patch version on the commit you want. It's marked as the latest GitHub Release
 only if it's the highest version, and snapshots keep following the highest version.
 
 ### When it fails
 
-Re-run the workflow from the Actions tab, or run it by hand with the tag as input; neither creates a tag. A version
+Fix what failed on `main`, then run `tools/release retry X.Y.Z`, which runs the workflow from `main` for the
+existing tag (the same as running it by hand from the Actions tab with the tag as input). Don't use "Re-run" on the
+failed run: it would use the workflow file at the tag. Neither creates a tag. A version
 on Maven Central can never be changed or published again, so the workflow checks first: if the version is already
 there, it skips publishing and only creates the GitHub Release if it's missing.
 

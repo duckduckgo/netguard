@@ -1,0 +1,272 @@
+#!/bin/sh
+# Releases netguard: picks the version and the commit on main, tags it and pushes the tag, then follows the release
+# workflow (see android/RELEASING.md) until the version is on Maven Central.
+#
+# Usage:
+#   tools/release                     interactive: pick the commit and the version
+#   tools/release minor|patch|X.Y.Z [--commit <sha>] [--yes]
+#   tools/release retry X.Y.Z         re-run the release workflow for an existing tag
+#   tools/release --dry-run ...       show what would happen, without tagging
+#
+# Needs git and gh (logged in). Only repository admins can push release tags.
+set -eu
+
+remote=${RELEASE_REMOTE:-origin}
+repo=duckduckgo/netguard
+artifact=com/duckduckgo/netguard/netguard-android
+overview=https://duckduckgo.github.io/netguard/
+
+# Colors only on a terminal, and never with NO_COLOR
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+    bold=$(printf '\033[1m') dim=$(printf '\033[2m') red=$(printf '\033[31m') green=$(printf '\033[32m')
+    yellow=$(printf '\033[33m') blue=$(printf '\033[34m') reset=$(printf '\033[0m')
+else
+    bold='' dim='' red='' green='' yellow='' blue='' reset=''
+fi
+
+die() {
+    printf '%s✗ %s%s\n' "$red" "$1" "$reset" >&2
+    exit 1
+}
+step() {
+    printf '%s▸%s %s\n' "$blue" "$reset" "$1"
+}
+ok() {
+    printf '%s✓%s %s\n' "$green" "$reset" "$1"
+}
+usage() {
+    sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
+}
+
+# Asks on the terminal even when stdin isn't one; prints the answer
+ask() {
+    printf '%s' "$1" > /dev/tty
+    read -r answer < /dev/tty || answer=''
+    printf '%s' "$answer"
+}
+
+release_tags() {
+    git tag --list '[0-9]*' --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true
+}
+
+next_version() {  # <latest> <minor|patch>
+    major=${1%%.*} rest=${1#*.}
+    minor=${rest%%.*} patch=${rest#*.}
+    case $2 in
+        minor) echo "$major.$((minor + 1)).0" ;;
+        patch) echo "$major.$minor.$((patch + 1))" ;;
+    esac
+}
+
+# The commit's CI on GitHub: success, failure, pending or none
+ci_status() {
+    if [ -n "${RELEASE_OFFLINE:-}" ]; then echo none; return; fi
+    gh api "repos/$repo/commits/$1/check-runs" --jq '
+        [.check_runs[]] as $runs
+        | if ($runs | length) == 0 then "none"
+          elif any($runs[]; .status != "completed") then "pending"
+          elif any($runs[]; .conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") then "failure"
+          else "success" end' 2> /dev/null || echo none
+}
+
+ci_mark() {
+    case $1 in
+        success) printf '%s✓ CI%s' "$green" "$reset" ;;
+        failure) printf '%s✗ CI%s' "$red" "$reset" ;;
+        pending) printf '%s● CI%s' "$yellow" "$reset" ;;
+        *) printf '%s· CI%s' "$dim" "$reset" ;;
+    esac
+}
+
+# The commit the latest snapshot was built from (recorded in its POM), or nothing
+snapshot_commit() {  # <snapshot version>
+    [ -z "${RELEASE_OFFLINE:-}" ] || return 0
+    base="https://central.sonatype.com/repository/maven-snapshots/$artifact/$1"
+    build=$(curl -sf --max-time 10 "$base/maven-metadata.xml" | sed -n 's:.*<value>\(.*\)</value>.*:\1:p' | head -1) || return 0
+    [ -n "$build" ] || return 0
+    curl -sf --max-time 10 "$base/netguard-android-$build.pom" | sed -n 's:.*<tag>\([0-9a-f]\{40\}\)</tag>.*:\1:p' | head -1 || true
+}
+
+# Follows the release workflow run for a tag to the end, then says where the release is
+follow() {  # <version>
+    version=$1
+    [ -z "${RELEASE_OFFLINE:-}" ] || return 0
+    step "Waiting for the release workflow to start..."
+    run=''
+    for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+        run=$(gh run list -R "$repo" --workflow release.yml --branch "$version" --limit 1 --json databaseId --jq '.[0].databaseId // empty' 2> /dev/null || true)
+        [ -n "$run" ] && break
+        sleep 5
+    done
+    [ -n "$run" ] || die "No release run for $version after a minute: see https://github.com/$repo/actions/workflows/release.yml"
+    step "Following https://github.com/$repo/actions/runs/$run (Maven Central can take a while)"
+    if gh run watch "$run" -R "$repo" --exit-status --interval 20 > /dev/null; then
+        ok "${bold}$version is released${reset}"
+        printf '  GitHub Release  https://github.com/%s/releases/tag/%s\n' "$repo" "$version"
+        printf '  Maven Central   https://central.sonatype.com/artifact/com.duckduckgo.netguard/netguard-android/%s\n' "$version"
+        printf '  Overview        %s\n' "$overview"
+        printf '\n%sTo ship it, bump version.com.duckduckgo.netguard..netguard-android to %s in the app.%s\n' "$dim" "$version" "$reset"
+    else
+        printf '%s✗ The release run failed: https://github.com/%s/actions/runs/%s%s\n' "$red" "$repo" "$run" "$reset" >&2
+        printf 'Fix what failed on main, then: tools/release retry %s\n' "$version" >&2
+        exit 1
+    fi
+}
+
+# Arguments
+bump='' commit='' yes='' dry_run='' retry='' snapshot=''
+while [ $# -gt 0 ]; do
+    case $1 in
+        -h|--help) usage; exit 0 ;;
+        --commit) [ $# -ge 2 ] || die "--commit needs a commit"; commit=$2; shift ;;
+        --yes) yes=1 ;;
+        --dry-run) dry_run=1 ;;
+        retry) [ $# -ge 2 ] || die "retry needs a version"; retry=$2; shift ;;
+        minor|patch) bump=$1 ;;
+        [0-9]*.[0-9]*.[0-9]*) bump=$1 ;;
+        *) die "Unknown argument: $1 (see tools/release --help)" ;;
+    esac
+    shift
+done
+
+command -v git > /dev/null || die "git isn't installed"
+if [ -z "${RELEASE_OFFLINE:-}" ]; then
+    command -v gh > /dev/null || die "gh isn't installed: https://cli.github.com"
+    gh auth status > /dev/null 2>&1 || die "gh isn't logged in: gh auth login"
+fi
+cd "$(git rev-parse --show-toplevel)"
+
+if [ -n "$retry" ]; then
+    echo "$retry" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || die "$retry isn't an X.Y.Z version"
+    git fetch --quiet --tags "$remote"
+    git rev-parse -q --verify "refs/tags/$retry" > /dev/null || die "There's no $retry tag"
+    if [ -n "$dry_run" ]; then
+        echo "Would re-run the release workflow for $retry"
+        exit 0
+    fi
+    step "Re-running the release workflow for $retry, from main's workflow"
+    gh workflow run release.yml -R "$repo" --ref main -f tag="$retry"
+    sleep 5
+    run=$(gh run list -R "$repo" --workflow release.yml --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId')
+    step "Following https://github.com/$repo/actions/runs/$run"
+    gh run watch "$run" -R "$repo" --exit-status --interval 20 > /dev/null && ok "$retry is released" || die "The retry failed: https://github.com/$repo/actions/runs/$run"
+    exit 0
+fi
+
+step "Fetching $remote..."
+git fetch --quiet --tags "$remote" main
+main=$(git rev-parse "$remote/main")
+latest=$(release_tags | head -1)
+[ -n "$latest" ] || die "No X.Y.Z release tag found"
+latest_date=$(git log -1 --format=%cs "$latest^{commit}")
+
+# The unreleased commits on main, newest first: sha, date, subject
+unreleased=$(mktemp)
+trap 'rm -f "$unreleased"' EXIT
+git log --first-parent --format='%H%x09%cs%x09%s' "$latest..$main" > "$unreleased"
+count=$(wc -l < "$unreleased" | tr -d ' ')
+
+if [ -z "$bump" ] || { [ -z "$commit" ] && [ -z "$yes" ]; }; then
+    snapshot_version="$(next_version "$latest" minor)-SNAPSHOT"
+    snapshot=$(snapshot_commit "$snapshot_version")
+    printf '\n%snetguard%s  latest release %s%s%s (%s)' "$bold" "$reset" "$bold" "$latest" "$reset" "$latest_date"
+    [ -n "$snapshot" ] && printf ', snapshot built from %s' "$(echo "$snapshot" | cut -c1-7)"
+    printf '\n\n'
+fi
+
+[ "$count" -gt 0 ] || die "Nothing to release: main has no commits since $latest"
+
+# Pick the commit: everything up to it goes out
+if [ -z "$commit" ]; then
+    if [ -n "$yes" ] || [ -n "$bump" ]; then
+        commit=$main
+    else
+        printf '%s commit%s on main since %s, newest first:\n\n' "$count" "$([ "$count" = 1 ] || echo s)" "$latest"
+        i=0
+        while IFS="$(printf '\t')" read -r sha date subject; do
+            i=$((i + 1))
+            marks=$(ci_mark "$(ci_status "$sha")")
+            if [ -n "$snapshot" ] && git merge-base --is-ancestor "$sha" "$snapshot" 2> /dev/null; then
+                marks="$marks  ${blue}in snapshot${reset}"
+            else
+                marks="$marks  ${dim}not in snapshot${reset}"
+            fi
+            printf '  %s%2d%s  %s  %s%s%s  %s\n       %s\n' "$bold" "$i" "$reset" "$(echo "$sha" | cut -c1-7)" "$dim" "$date" "$reset" "$subject" "$marks"
+        done < "$unreleased"
+        printf '\n%sA release includes the commit you pick and every commit below it.%s\n' "$dim" "$reset"
+        pick=$(ask "Release up to which commit? [1] ")
+        pick=${pick:-1}
+        case $pick in *[!0-9]*|'') die "Not a number: $pick" ;; esac
+        [ "$pick" -ge 1 ] && [ "$pick" -le "$count" ] || die "Pick a number from 1 to $count"
+        commit=$(sed -n "${pick}p" "$unreleased" | cut -f1)
+    fi
+fi
+resolved=$(git rev-parse --verify -q "$commit^{commit}") || die "Unknown commit: $commit"
+commit=$resolved
+git merge-base --is-ancestor "$commit" "$main" || die "$(echo "$commit" | cut -c1-7) isn't on $remote/main"
+released_in=$(git tag --contains "$commit" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+[ -z "$released_in" ] || die "$(echo "$commit" | cut -c1-7) is already released, in $released_in"
+
+# Pick the version
+if [ -z "$bump" ]; then
+    minor=$(next_version "$latest" minor) patch=$(next_version "$latest" patch)
+    printf '\n  %s1%s  minor  %s%s%s  %snew features or fixes, the usual one%s\n' "$bold" "$reset" "$bold" "$minor" "$reset" "$dim" "$reset"
+    printf '  %s2%s  patch  %s%s%s  %sa quick fix on top of %s%s\n' "$bold" "$reset" "$bold" "$patch" "$reset" "$dim" "$latest" "$reset"
+    choice=$(ask "Which version? [1] ")
+    case ${choice:-1} in
+        1|minor) bump=minor ;;
+        2|patch) bump=patch ;;
+        [0-9]*.[0-9]*.[0-9]*) bump=$choice ;;
+        *) die "Pick 1, 2 or an X.Y.Z version" ;;
+    esac
+fi
+case $bump in
+    minor|patch) version=$(next_version "$latest" "$bump") ;;
+    *) version=$bump ;;
+esac
+echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || die "$version isn't an X.Y.Z version"
+git rev-parse -q --verify "refs/tags/$version" > /dev/null && die "$version already exists"
+highest=$(printf '%s\n%s\n' "$latest" "$version" | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+
+# What goes out
+short=$(echo "$commit" | cut -c1-7)
+included=$(git log --first-parent --format='%h %s' "$latest..$commit")
+included_count=$(printf '%s\n' "$included" | grep -c . || true)
+ci=$(ci_status "$commit")
+printf '\n%sRelease %s from %s%s\n' "$bold" "$version" "$short" "$reset"
+printf '%s commit%s since %s:\n' "$included_count" "$([ "$included_count" = 1 ] || echo s)" "$latest"
+printf '%s\n' "$included" | sed 's/^/  /'
+[ "$highest" = "$version" ] || printf '%s%s is lower than %s: it will be a release, but not the latest one.%s\n' "$yellow" "$version" "$latest" "$reset"
+printf 'CI on %s: %s\n' "$short" "$(ci_mark "$ci")"
+
+if [ -n "$dry_run" ]; then
+    printf '\n%sDry run: would tag %s on %s and push the tag.%s\n' "$dim" "$version" "$short" "$reset"
+    exit 0
+fi
+
+# Confirm. A commit whose CI failed or is still running needs the version typed out, and never goes out with --yes;
+# one without CI results (eg. a commit only CI files changed) just gets a warning
+case $ci in
+    success) ;;
+    none) printf '%sNo CI results for %s.%s\n' "$yellow" "$short" "$reset" ;;
+    *)
+        [ -z "$yes" ] || die "CI on $short isn't green ($ci): run without --yes to release it anyway"
+        printf '%sCI on %s isn'"'"'t green (%s).%s\n' "$yellow" "$short" "$ci" "$reset"
+        answer=$(ask "Type $version to release it anyway: ")
+        [ "$answer" = "$version" ] || { echo "Not released."; exit 1; }
+        yes=1 ;;
+esac
+if [ -z "$yes" ]; then
+    echo
+    answer=$(ask "Release it? [y/N] ")
+    case $answer in y|Y|yes) ;; *) echo "Not released."; exit 1 ;; esac
+fi
+
+step "Tagging $version on $short and pushing the tag"
+git tag -a "$version" -m "$version" "$commit"
+if ! git push --quiet "$remote" "refs/tags/$version"; then
+    git tag -d "$version" > /dev/null
+    die "Couldn't push the tag: only repository admins can push release tags"
+fi
+ok "Pushed $version"
+follow "$version"

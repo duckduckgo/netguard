@@ -22,6 +22,9 @@ jobs:
       - name: Run the release-status tests
         run: node --test tools/release-status/test/*.test.js
 
+      - name: Run the release command tests
+        run: node --test tools/test/*.test.js
+
       - name: Report Test Results
         run: |
           if [ $? -eq 0 ]; then
