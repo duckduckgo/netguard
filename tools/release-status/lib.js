@@ -49,7 +49,8 @@ function appNetguardVersion(properties) {
  * - head: { sha, date, subject } of main
  * - commits: main's recent commits, newest first: { sha, date, subject, release, inSnapshot }, where release is the
  *   first X.Y.Z tag containing it (or null) and inSnapshot is true, false or null (snapshot commit not recorded)
- * - releases: { version, commit, date }, newest first
+ * - releases: { version, commit, date, published }, newest first; published is false for a tag Maven Central doesn't
+ *   serve (its release failed or is still running)
  * - snapshot: { version, build, date, commit, behind } or null; behind is main's commits after it, or null
  * - app: store releases, newest first: { app, date, netguard }
  * - errors: { central, snapshot, app }: why a source couldn't be read, or absent
@@ -79,7 +80,8 @@ function buildModel({ generatedAt, head, commits, releases, snapshot, app, error
         latestApp,
         releases: releases.slice(0, shownReleases).map(r => ({
             ...r,
-            firstApp: firstApp(r.version),
+            published: r.published !== false,
+            firstApp: r.published === false ? null : firstApp(r.version),
             inLatestApp: !!latestApp && latestApp.netguard === r.version,
             commits: commits.filter(c => c.release === r.version).length,
         })),
@@ -118,7 +120,7 @@ function box(kind, title, body, flagged) {
 function renderBoxes(m) {
     const commit = sha => `<a class="mono" href="${COMMIT_URL}${esc(sha)}">${esc(short(sha))}</a>`;
     const unread = what => `<div class="v">?</div><div class="muted">Couldn't read ${esc(what)} at ${esc(m.generatedAt)}.</div>`;
-    const latest = m.releases[0];
+    const latest = m.releases.find(r => r.published);
     const s = m.snapshot;
     return `<div class="boxes">
 ${box('main', 'main', `<div class="v">${commit(m.head.sha)}</div><div class="muted">${esc(m.head.subject)}</div>`)}
@@ -143,6 +145,11 @@ function renderVersions(m) {
 <td>${esc(day(m.snapshot.date))}</td><td>snapshot repository</td><td class="muted">none</td><td></td><td>${n} unreleased commit${n === 1 ? '' : 's'}</td></tr>`);
     }
     for (const r of m.releases) {
+        if (!r.published) {
+            rows.push(`<tr><td><b>${esc(r.version)}</b></td><td class="mono"><a href="${COMMIT_URL}${esc(r.commit)}">${esc(short(r.commit))}</a></td>
+<td>${esc(day(r.date))}</td><td colspan="4"><b>Tagged, not on Maven Central</b>: its <a href="https://github.com/duckduckgo/netguard/actions/workflows/release.yml">release</a> failed or is still running.</td></tr>`);
+            continue;
+        }
         rows.push(`<tr><td><b>${esc(r.version)}</b></td><td class="mono"><a href="${COMMIT_URL}${esc(r.commit)}">${esc(short(r.commit))}</a></td>
 <td>${esc(day(r.date))}</td><td><a href="https://central.sonatype.com/artifact/com.duckduckgo.netguard/netguard-android/${esc(r.version)}">Maven Central</a></td>
 <td>${r.firstApp ? `${esc(r.firstApp.app)} <span class="muted">${esc(day(r.firstApp.date))}</span>` : '<span class="muted">none yet</span>'}</td>
@@ -220,7 +227,7 @@ ${renderBoxes(m)}
 // The run summary: the pipeline in a table
 function renderSummary(m) {
     const s = m.snapshot;
-    const latest = m.releases[0];
+    const latest = m.releases.find(r => r.published);
     const cell = (error, text) => (error ? `couldn't read: ${error}` : text).replace(/\|/g, '\\|');
     return `### netguard: what's published
 

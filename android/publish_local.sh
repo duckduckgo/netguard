@@ -35,7 +35,8 @@ echo ""
 # Version: computed from git tags (see RELEASING.md), or one entered here for this build only
 cd "$(dirname "$0")"
 set -o pipefail
-CURRENT_VERSION=$(./gradlew -q :netguard:printVersion | cut -d' ' -f1)
+# The last line: on a fresh machine Gradle first prints the NDK's installation
+CURRENT_VERSION=$(./gradlew -q :netguard:printVersion | tail -n 1 | cut -d' ' -f1)
 if [ -z "$CURRENT_VERSION" ]; then
     print_error "Couldn't get the version from Gradle"
     exit 1

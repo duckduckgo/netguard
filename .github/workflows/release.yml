@@ -97,7 +97,8 @@ jobs:
       - name: Check the version the build will publish
         if: steps.central.outputs.published == 'false'
         run: |
-          version=$(cd android && ./gradlew -q :netguard:printVersion -PVERSION_NAME="$TAG")
+          # The last line: on a fresh machine Gradle first prints the NDK's installation
+          version=$(cd android && ./gradlew -q :netguard:printVersion -PVERSION_NAME="$TAG" | tail -n 1)
           if [ "$version" != "$TAG ($TAG+$(git rev-parse --short=7 HEAD))" ]; then
             echo "::error::The build would publish \"$version\", not $TAG"
             exit 1

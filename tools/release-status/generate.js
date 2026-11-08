@@ -45,17 +45,24 @@ async function get(url, { optional = false } = {}) {
     return response;
 }
 
-// main's recent commits, which release first has each, and the release tags with their commits and dates
-function readGit(ref, snapshotCommit) {
+// main's recent commits, which release first has each, and the release tags with their commits and dates. Only
+// versions Maven Central serves count as releases (onCentral; all tags when Central couldn't be read): a tag whose
+// release failed or is still running hasn't released anything
+function readGit(ref, snapshotCommit, onCentral) {
     const head = git('rev-parse', ref);
     const commits = lines(git('log', '--first-parent', `-${SHOWN_COMMITS}`, '--format=%H%x09%cI%x09%s', head))
         .map(line => { const [sha, date, ...subject] = line.split('\t'); return { sha, date, subject: subject.join('\t') }; });
     const releases = lines(git('tag', '--list', '[0-9]*', '--sort=-v:refname'))
         .filter(tag => lib.RELEASE_TAG.test(tag))
-        .map(tag => ({ version: tag, commit: git('rev-parse', `${tag}^{commit}`), date: git('log', '-1', '--format=%cI', `${tag}^{commit}`) }));
-    // Each commit's release is the oldest release containing it
+        .map(tag => ({
+            version: tag,
+            commit: git('rev-parse', `${tag}^{commit}`),
+            date: git('log', '-1', '--format=%cI', `${tag}^{commit}`),
+            published: onCentral ? onCentral.has(tag) : true,
+        }));
+    // Each commit's release is the oldest published release containing it
     const releaseOf = new Map();
-    for (const release of [...releases].reverse()) {
+    for (const release of [...releases].reverse().filter(r => r.published)) {
         for (const sha of lines(git('rev-list', release.commit))) {
             if (!releaseOf.has(sha)) releaseOf.set(sha, release.version);
         }
@@ -90,11 +97,16 @@ async function readSnapshot() {
     return { version, build: build.value, date: build.date, commit: pom ? lib.pomCommit(await pom.text()) : null };
 }
 
-// Release dates on Maven Central, from each POM's Last-Modified (versions not on Central are left out)
-async function readCentral(releases) {
-    const onCentral = new Set(lib.metadataVersions(await (await get(`${CENTRAL}/maven-metadata.xml`)).text()));
-    const shown = releases.filter(r => onCentral.has(r.version)).slice(0, SHOWN_RELEASES);
-    return Promise.all(shown.map(async r => {
+// The versions Maven Central serves
+async function readCentralVersions() {
+    return new Set(lib.metadataVersions(await (await get(`${CENTRAL}/maven-metadata.xml`)).text()));
+}
+
+// The newest releases, with their dates on Maven Central from each POM's Last-Modified (tags not on Central keep
+// their commit's date)
+async function readCentralDates(releases) {
+    return Promise.all(releases.slice(0, SHOWN_RELEASES).map(async r => {
+        if (!r.published) return r;
         const response = await fetch(`${CENTRAL}/${r.version}/netguard-android-${r.version}.pom`, { method: 'HEAD', signal: AbortSignal.timeout(30000) });
         const modified = response.headers.get('last-modified');
         return { ...r, date: modified ? new Date(modified).toISOString() : r.date };
@@ -133,9 +145,11 @@ async function main() {
     const failed = (source, e) => { errors[source] = e.message; console.error(`Couldn't read ${source}: ${e.message}`); return null; };
 
     const snapshot = await readSnapshot().catch(e => failed('snapshot', e));
-    const fromGit = readGit(ref, snapshot && snapshot.commit);
-    const releases = await readCentral(fromGit.releases).catch(e => failed('central', e)) || [];
-    const oldestShown = releases.length ? releases[releases.length - 1].version : null;
+    const onCentral = await readCentralVersions().catch(e => failed('central', e));
+    const fromGit = readGit(ref, snapshot && snapshot.commit, onCentral);
+    const releases = onCentral ? await readCentralDates(fromGit.releases).catch(e => failed('central', e)) || [] : [];
+    const published = releases.filter(r => r.published);
+    const oldestShown = published.length ? published[published.length - 1].version : null;
     const app = await readApp(oldestShown).catch(e => failed('app', e)) || [];
 
     const model = lib.buildModel({

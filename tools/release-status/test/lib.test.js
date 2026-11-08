@@ -122,3 +122,14 @@ test('writes the pipeline as a table for the run summary', () => {
     assert.match(summary, /1\.12\.0-SNAPSHOT, built 2026-11-07 from `4444444`, \*\*1 behind main\*\*/);
     assert.match(summary, /5\.301\.0, ships netguard 1\.10\.0/);
 });
+
+test('a tag Maven Central doesn\'t serve isn\'t a release yet', () => {
+    // 1.12.0 is tagged on c4, but its release failed: generate.js gives c4 no release and marks the tag unpublished
+    const releases = [{ version: '1.12.0', commit: sha(4), date: '2026-11-08T00:00:00Z', published: false }, ...inputs().releases];
+    const m = lib.buildModel(inputs({ releases }));
+    assert.strictEqual(m.commits.find(c => c.sha === sha(4)).stage, 'snapshot');
+    const page = lib.renderPage(m);
+    assert.match(page, /<b>1\.12\.0<\/b>[\s\S]*Tagged, not on Maven Central/);
+    assert.match(page, /<span class="pill p-released">Maven Central<\/span><div class="v">1\.11\.0<\/div>/, 'the latest published release');
+    assert.match(lib.renderSummary(m), /\| 1\.11\.0 \(2026-11-02\) \|/);
+});
