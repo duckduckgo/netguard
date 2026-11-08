@@ -23,7 +23,8 @@ tools/release
 ```
 
 It shows the commits on `main` that aren't released yet (with their CI and whether the snapshot has them), lets you
-pick the newest one to include and the version (minor or patch), shows what will go out and asks before releasing.
+pick the newest one to include and the version (minor or patch) with the arrow keys, shows what will go out and asks
+before releasing.
 Then it tags that commit, pushes only the tag, and follows the release until it's on Maven Central. It needs `git`
 and `gh`, and only repository admins can push release tags. Without the questions:
 

@@ -45,6 +45,86 @@ ask() {
     printf '%s' "$answer"
 }
 
+# Arrow-key menus need a terminal; without one (or with RELEASE_NO_MENU) the numbered prompts are used
+can_menu() {
+    [ -z "${RELEASE_NO_MENU:-}" ] && [ -t 1 ] && stty -g < /dev/tty > /dev/null 2>&1
+}
+
+# The terminal's settings while a menu runs, to put them back on any exit
+tty_state=''
+restore_tty() {
+    if [ -n "$tty_state" ]; then
+        stty "$tty_state" < /dev/tty 2> /dev/null || true
+        printf '\033[?25h' > /dev/tty
+        tty_state=''
+    fi
+}
+
+# One key from the terminal: up, down, enter, quit, a digit, or nothing
+read_key() {
+    key=$(dd bs=1 count=1 2> /dev/null < /dev/tty)
+    case $key in
+        "$(printf '\033')")
+            # An arrow is ESC [ A or ESC O A; a lone ESC times out
+            stty min 0 time 1 < /dev/tty
+            rest=$(dd bs=1 count=2 2> /dev/null < /dev/tty)
+            stty min 1 time 0 < /dev/tty
+            case $rest in '[A'|OA) echo up ;; '[B'|OB) echo down ;; '') echo quit ;; esac ;;
+        '') echo enter ;;
+        k) echo up ;;
+        j) echo down ;;
+        q|Q) echo quit ;;
+        [0-9]) echo "$key" ;;
+    esac
+}
+
+# Lets the user pick an item with the arrow keys (or its number) and Enter, and sets menu_choice to its number.
+# Items: one per line in a file, as "first line<TAB>second line" (the second line is optional)
+menu() {  # <items file> <default>
+    menu_choice=$2
+    n=$(wc -l < "$1" | tr -d ' ')
+    rows=$(awk -F'\t' '{ rows += ($2 == "" ? 1 : 2) } END { print rows }' "$1")
+    # The terminal's width, or 100 columns when it doesn't say (some report 0)
+    width=$(stty size < /dev/tty 2> /dev/null | cut -d' ' -f2)
+    case $width in ''|*[!0-9]*) width=100 ;; esac
+    [ "$width" -gt 20 ] || width=100
+    width=$((width - 4))
+    typed=''
+    printf '%s↑/↓ to move, Enter to pick, q to cancel%s\n' "$dim" "$reset" > /dev/tty
+    tty_state=$(stty -g < /dev/tty)
+    stty -icanon -echo min 1 time 0 < /dev/tty
+    printf '\033[?25l' > /dev/tty
+    drawn=''
+    while :; do
+        [ -z "$drawn" ] || printf '\033[%dA' "$rows" > /dev/tty
+        drawn=1
+        i=0
+        while IFS="$(printf '\t')" read -r first second; do
+            i=$((i + 1))
+            # Cut to the terminal's width: a wrapped line would break the redraw
+            first=$(printf '%s' "$first" | cut -c1-"$width")
+            if [ "$i" = "$menu_choice" ]; then
+                printf '\033[2K%s❯ %s%s\n' "$bold$blue" "$first" "$reset" > /dev/tty
+            else
+                printf '\033[2K  %s\n' "$first" > /dev/tty
+            fi
+            [ -z "$second" ] || printf '\033[2K    %s\n' "$second" > /dev/tty
+        done < "$1"
+        key=$(read_key)
+        case $key in
+            up) menu_choice=$((menu_choice > 1 ? menu_choice - 1 : n)); typed='' ;;
+            down) menu_choice=$((menu_choice < n ? menu_choice + 1 : 1)); typed='' ;;
+            enter) break ;;
+            quit) restore_tty; echo "Not released."; exit 1 ;;
+            [0-9])
+                # Digits jump to that item; a second digit makes a two-digit number when there are enough items
+                if [ -n "$typed" ] && [ "$typed$key" -le "$n" ]; then typed=$typed$key; else typed=$key; fi
+                if [ "$typed" -ge 1 ] && [ "$typed" -le "$n" ]; then menu_choice=$typed; fi ;;
+        esac
+    done
+    restore_tty
+}
+
 release_tags() {
     git tag --list '[0-9]*' --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true
 }
@@ -162,7 +242,9 @@ latest_date=$(git log -1 --format=%cs "$latest^{commit}")
 
 # The unreleased commits on main, newest first: sha, date, subject
 unreleased=$(mktemp)
-trap 'rm -f "$unreleased"' EXIT
+items=$(mktemp)
+trap 'restore_tty; rm -f "$unreleased" "$items"' EXIT
+trap 'restore_tty; exit 130' INT TERM
 git log --first-parent --format='%H%x09%cs%x09%s' "$latest..$main" > "$unreleased"
 count=$(wc -l < "$unreleased" | tr -d ' ')
 
@@ -181,23 +263,33 @@ if [ -z "$commit" ]; then
     if [ -n "$yes" ] || [ -n "$bump" ]; then
         commit=$main
     else
-        printf '%s commit%s on main since %s, newest first:\n\n' "$count" "$([ "$count" = 1 ] || echo s)" "$latest"
-        i=0
+        printf '%s commit%s on main since %s, newest first.\n' "$count" "$([ "$count" = 1 ] || echo s)" "$latest"
+        printf '%sA release includes the commit you pick and every commit below it.%s\n\n' "$dim" "$reset"
+        # Each commit with its CI and whether the snapshot has it
+        : > "$items"
         while IFS="$(printf '\t')" read -r sha date subject; do
-            i=$((i + 1))
             marks=$(ci_mark "$(ci_status "$sha")")
             if [ -n "$snapshot" ] && git merge-base --is-ancestor "$sha" "$snapshot" 2> /dev/null; then
                 marks="$marks  ${blue}in snapshot${reset}"
             else
                 marks="$marks  ${dim}not in snapshot${reset}"
             fi
-            printf '  %s%2d%s  %s  %s%s%s  %s\n       %s\n' "$bold" "$i" "$reset" "$(echo "$sha" | cut -c1-7)" "$dim" "$date" "$reset" "$subject" "$marks"
+            printf '%s  %s  %s\t%s\n' "$(echo "$sha" | cut -c1-7)" "$date" "$subject" "$marks" >> "$items"
         done < "$unreleased"
-        printf '\n%sA release includes the commit you pick and every commit below it.%s\n' "$dim" "$reset"
-        pick=$(ask "Release up to which commit? [1] ")
-        pick=${pick:-1}
-        case $pick in *[!0-9]*|'') die "Not a number: $pick" ;; esac
-        [ "$pick" -ge 1 ] && [ "$pick" -le "$count" ] || die "Pick a number from 1 to $count"
+        if can_menu; then
+            menu "$items" 1
+            pick=$menu_choice
+        else
+            i=0
+            while IFS="$(printf '\t')" read -r first second; do
+                i=$((i + 1))
+                printf '  %s%2d%s  %s\n       %s\n' "$bold" "$i" "$reset" "$first" "$second"
+            done < "$items"
+            pick=$(ask "Release up to which commit? [1] ")
+            pick=${pick:-1}
+            case $pick in *[!0-9]*|'') die "Not a number: $pick" ;; esac
+            [ "$pick" -ge 1 ] && [ "$pick" -le "$count" ] || die "Pick a number from 1 to $count"
+        fi
         commit=$(sed -n "${pick}p" "$unreleased" | cut -f1)
     fi
 fi
@@ -210,9 +302,21 @@ released_in=$(git tag --contains "$commit" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' 
 # Pick the version
 if [ -z "$bump" ]; then
     minor=$(next_version "$latest" minor) patch=$(next_version "$latest" patch)
-    printf '\n  %s1%s  minor  %s%s%s  %snew features or fixes, the usual one%s\n' "$bold" "$reset" "$bold" "$minor" "$reset" "$dim" "$reset"
-    printf '  %s2%s  patch  %s%s%s  %sa quick fix on top of %s%s\n' "$bold" "$reset" "$bold" "$patch" "$reset" "$dim" "$latest" "$reset"
-    choice=$(ask "Which version? [1] ")
+    if can_menu; then
+        printf '\nWhich version?\n'
+        printf 'minor  %s   new features or fixes, the usual one\npatch  %s   a quick fix on top of %s\nanother version...\n' \
+            "$minor" "$patch" "$latest" > "$items"
+        menu "$items" 1
+        case $menu_choice in
+            1) choice=minor ;;
+            2) choice=patch ;;
+            *) choice=$(ask "Version (X.Y.Z): ") ;;
+        esac
+    else
+        printf '\n  %s1%s  minor  %s%s%s  %snew features or fixes, the usual one%s\n' "$bold" "$reset" "$bold" "$minor" "$reset" "$dim" "$reset"
+        printf '  %s2%s  patch  %s%s%s  %sa quick fix on top of %s%s\n' "$bold" "$reset" "$bold" "$patch" "$reset" "$dim" "$latest" "$reset"
+        choice=$(ask "Which version? [1] ")
+    fi
     case ${choice:-1} in
         1|minor) bump=minor ;;
         2|patch) bump=patch ;;
