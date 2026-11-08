@@ -1,25 +1,36 @@
 name: build
 
+# Publishes a snapshot of the next version (see android/RELEASING.md) for every push to main that can change the
+# library: changes to docs only don't publish, changes to the workflows do, as they can change how it's built.
+
 on:
   push:
     branches:
       - main
     paths-ignore:
       - '**.md'
-      - '.github/**'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# One snapshot publish at a time, in push order, so an older commit can't end up as the latest snapshot
+concurrency:
+  group: snapshot
+
 jobs:
   publish:
     runs-on: ubuntu-latest
     if: github.repository == 'duckduckgo/netguard' && github.ref == 'refs/heads/main'
+    # Holds the signing and Maven Central secrets; restricted to main and X.Y.Z tags in the repo settings
+    environment: maven-central
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # The snapshot's version comes from the newest X.Y.Z tag
+          fetch-depth: 0
 
       - name: Configure JDK
         uses: actions/setup-java@v6

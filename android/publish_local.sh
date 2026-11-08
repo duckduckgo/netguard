@@ -32,8 +32,14 @@ echo "📦 Netguard Local Publishing"
 echo "============================="
 echo ""
 
-# Get current version
-CURRENT_VERSION=$(grep VERSION_NAME android/version.properties | cut -d'=' -f2)
+# Version: computed from git tags (see RELEASING.md), or one entered here for this build only
+cd "$(dirname "$0")"
+set -o pipefail
+CURRENT_VERSION=$(./gradlew -q :netguard:printVersion | cut -d' ' -f1)
+if [ -z "$CURRENT_VERSION" ]; then
+    print_error "Couldn't get the version from Gradle"
+    exit 1
+fi
 print_step "Current version: $CURRENT_VERSION"
 echo ""
 
@@ -42,34 +48,30 @@ read -p "Use this version? (y/n, or enter new version): " response
 if [[ "$response" == "n" ]] || [[ "$response" == "N" ]]; then
     read -p "Enter new version (e.g., 1.11.0-SNAPSHOT-iot): " NEW_VERSION
     if [ -n "$NEW_VERSION" ]; then
-        echo "VERSION_NAME=$NEW_VERSION" > android/version.properties
-        print_success "Updated version to: $NEW_VERSION"
         CURRENT_VERSION=$NEW_VERSION
     fi
 elif [[ "$response" != "y" ]] && [[ "$response" != "Y" ]] && [[ -n "$response" ]]; then
     # User entered a version directly
-    echo "VERSION_NAME=$response" > android/version.properties
-    print_success "Updated version to: $response"
     CURRENT_VERSION=$response
 fi
+print_success "Publishing version: $CURRENT_VERSION"
 echo ""
 
 # Clean build
 print_step "Cleaning previous builds..."
-cd android
 ./gradlew clean --quiet
 print_success "Clean complete"
 echo ""
 
 # Build native library
 print_step "Building native library with C/C++ changes..."
-./gradlew :netguard:assembleDebug --quiet
+./gradlew :netguard:assembleDebug -PVERSION_NAME="$CURRENT_VERSION" --quiet
 print_success "Native library built"
 echo ""
 
 # Publish to Maven Local
 print_step "Publishing to Maven Local..."
-./gradlew publishToMavenLocal --quiet
+./gradlew publishToMavenLocal -PVERSION_NAME="$CURRENT_VERSION" --quiet
 print_success "Published to Maven Local"
 echo ""
 

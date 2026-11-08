@@ -6,21 +6,51 @@ plugins {
 
 //apply plugin: 'maven-publish'
 
-def getVersionName = { ->
-    def props = new Properties()
-    file("../version.properties").withInputStream { props.load(it) }
-    return props.getProperty("VERSION_NAME")
+// Runs git in the repository, or returns null when git or the history isn't there (eg. a source archive)
+def git = { String... args ->
+    try {
+        def process = (["git"] + args.toList()).execute(null, projectDir)
+        def output = process.text.trim()
+        return process.waitFor() == 0 ? output : null
+    } catch (IOException ignored) {
+        return null
+    }
 }
 
-import com.vanniktech.maven.publish.SonatypeHost
+// The version comes from git tags. The release workflow passes the tag (-PVERSION_NAME=X.Y.Z); every other build is
+// a snapshot of the next minor version after the highest X.Y.Z tag in its history. See RELEASING.md.
+def netguardVersion = providers.gradleProperty("VERSION_NAME").orNull ?: {
+    // Highest, not nearest: a patch tagged after a newer release mustn't take the snapshot back to a released version
+    def tag = git("tag", "--merged", "HEAD", "--list", "[0-9]*", "--sort=-v:refname")
+        ?.readLines()?.find { it ==~ /\d+\.\d+\.\d+/ }
+    if (tag == null) {
+        // CI must never publish this version: it means the checkout has no tags (eg. a shallow clone)
+        if (System.getenv("CI")) {
+            throw new GradleException("netguard: no X.Y.Z tag in the git history; fetch the tags (fetch-depth: 0)")
+        }
+        logger.warn("netguard: no X.Y.Z tag in the git history, building version 0.0.0-SNAPSHOT")
+        return "0.0.0-SNAPSHOT"
+    }
+    def (major, minor) = tag.tokenize(".")*.toInteger()
+    return "${major}.${minor + 1}.0-SNAPSHOT"
+}()
+
+// The commit a build is made from, published in the POM and reported by the library with its version
+def commit = git("rev-parse", "HEAD")
+def dirty = git("status", "--porcelain", "--untracked-files=no") ? ".dirty" : ""
+def netguardBuildVersion = commit ? "${netguardVersion}+${commit.take(7)}${dirty}" : netguardVersion
+
+tasks.register("printVersion") {
+    doLast { println "${netguardVersion} (${netguardBuildVersion})" }
+}
 
 mavenPublishing {
-    // publishing to Central Portal
-    publishToMavenCentral()
+    // publishing to Central Portal; releases go live without a manual step in the portal
+    publishToMavenCentral(true)
 
     signAllPublications()
 
-    coordinates("com.duckduckgo.netguard", "netguard-android", "${getVersionName}")
+    coordinates("com.duckduckgo.netguard", "netguard-android", netguardVersion)
 
     pom {
         name = "DDG Netguard"
@@ -45,6 +75,9 @@ mavenPublishing {
             url = "https://github.com/duckduckgo/netguard"
             connection = "scm:git:git://github.com/duckduckgo/netguard.git"
             developerConnection = "scm:git:ssh://git@github.com:duckduckgo/netguard.git"
+            if (commit) {
+                tag = commit
+            }
         }
     }
 }
@@ -59,7 +92,7 @@ android {
         targetSdk 32
         versionCode 1
         versionName "1.0.0"
-        project.archivesBaseName = "ddg-android-netguard-${getVersionName}"
+        project.archivesBaseName = "ddg-android-netguard-${netguardVersion}"
         setProperty("archivesBaseName", "${archivesBaseName}")
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"

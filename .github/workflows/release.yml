@@ -1,0 +1,163 @@
+name: release
+
+# Releases netguard when a maintainer pushes an X.Y.Z tag on main: tests the tagged commit, publishes it to Maven
+# Central, waits until Central serves it, then creates the GitHub Release. Re-running the workflow is the retry: a
+# version already on Central isn't published again. See android/RELEASING.md.
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'An existing X.Y.Z tag to retry (this never creates a tag)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.repository == 'duckduckgo/netguard'
+    # Holds the signing and Maven Central secrets; restricted to main and X.Y.Z tags in the repo settings
+    environment: maven-central
+
+    steps:
+      - name: Check the tag name
+        run: |
+          if ! echo "$TAG" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::$TAG isn't an X.Y.Z tag"
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: Check the tag is on main
+        run: |
+          if ! git merge-base --is-ancestor "refs/tags/$TAG" origin/main; then
+            echo "::error::$TAG isn't on main"
+            exit 1
+          fi
+
+      - name: Run the native tests
+        run: ./src/test/run-tests.sh
+
+      - name: Check whether Maven Central already has it
+        id: central
+        run: |
+          pom="https://repo1.maven.org/maven2/com/duckduckgo/netguard/netguard-android/$TAG/netguard-android-$TAG.pom"
+          echo "pom=$pom" >> "$GITHUB_OUTPUT"
+          status=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 -I "$pom")
+          case "$status" in
+            200)
+              echo "$TAG is already on Maven Central: not publishing it again"
+              echo "published=true" >> "$GITHUB_OUTPUT" ;;
+            404)
+              echo "published=false" >> "$GITHUB_OUTPUT" ;;
+            *)
+              # Anything else may hide a published version: don't upload it again on a guess
+              echo "::error::Maven Central answered $status for $pom; re-run once it answers 200 or 404"
+              exit 1 ;;
+          esac
+
+      - name: Configure JDK
+        if: steps.central.outputs.published == 'false'
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - name: Setup Android
+        if: steps.central.outputs.published == 'false'
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install CMake 3.18.1
+        if: steps.central.outputs.published == 'false'
+        run: yes | sdkmanager "cmake;3.18.1"
+
+      - name: Setup gradle
+        if: steps.central.outputs.published == 'false'
+        uses: gradle/actions/setup-gradle@v5
+
+      # A tag from before tag-driven versions would build another version, and a dirty tree a different library
+      - name: Check the version the build will publish
+        if: steps.central.outputs.published == 'false'
+        run: |
+          version=$(cd android && ./gradlew -q :netguard:printVersion -PVERSION_NAME="$TAG")
+          if [ "$version" != "$TAG ($TAG+$(git rev-parse --short=7 HEAD))" ]; then
+            echo "::error::The build would publish \"$version\", not $TAG"
+            exit 1
+          fi
+
+      - name: Publish to Maven Central
+        if: steps.central.outputs.published == 'false'
+        run: cd ./android; ./gradlew clean publish -PVERSION_NAME="$TAG" --stacktrace
+        env:
+          ORG_GRADLE_PROJECT_mavenCentralUsername: ${{ secrets.CENTRAL_PORTAL_USERNAME }}
+          ORG_GRADLE_PROJECT_mavenCentralPassword: ${{ secrets.CENTRAL_PORTAL_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKey: ${{ secrets.ARTIFACT_SIGNING_PRIVATE_KEY }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyPassword: ${{ secrets.ARTIFACT_SIGNING_KEY_PASSWORD }}
+          ORG_GRADLE_PROJECT_signingInMemoryKeyId: ${{ secrets.ARTIFACT_SIGNING_KEY_ID }}
+
+      # The plugin doesn't wait for Central to validate the upload, so a rejected release would otherwise look green
+      - name: Wait for Maven Central to serve it
+        if: steps.central.outputs.published == 'false'
+        timeout-minutes: 50
+        env:
+          POM: ${{ steps.central.outputs.pom }}
+        run: |
+          for attempt in $(seq 90); do
+            if curl -sfI --max-time 20 "$POM" > /dev/null; then
+              echo "$TAG is on Maven Central"
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::$TAG isn't on Maven Central after 45 minutes: check the deployment in the Central Portal" \
+            "before re-running, as a re-run uploads it again while Central doesn't serve it"
+          exit 1
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "The GitHub Release for $TAG already exists"
+            exit 0
+          fi
+          release_tags() {
+            git tag "$@" --list '[0-9]*' --sort=-v:refname | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' || true
+          }
+          # Notes cover the PRs merged since the highest X.Y.Z tag before this one
+          previous=$(release_tags --merged "$TAG^" | head -1)
+          # Only the highest version is Latest: a patch to an older version isn't
+          latest=$([ "$(release_tags | head -1)" = "$TAG" ] && echo true || echo false)
+          gh release create "$TAG" --verify-tag --latest="$latest" --title "$TAG" --generate-notes \
+            ${previous:+--notes-start-tag "$previous"}
