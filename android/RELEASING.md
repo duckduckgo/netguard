@@ -10,7 +10,9 @@ netguard's version comes from git tags. There is no version file and no version-
 - Every build records its commit: in the published POM (`<scm><tag>`), and with its version as
   `1.11.0-SNAPSHOT+a1b2c3d` (`.dirty` when built with uncommitted changes).
 
-`./gradlew :netguard:printVersion` shows the version a build would get.
+`./gradlew :netguard:printVersion` shows the version a build would get, and https://duckduckgo.github.io/netguard/
+shows which commits are in the snapshot, in each release and in the DuckDuckGo Android app
+([tools/release-status](../tools/release-status/README.md)).
 
 ## Publishing a release
 

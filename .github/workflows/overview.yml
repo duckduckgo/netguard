@@ -1,0 +1,58 @@
+name: overview
+
+# Rebuilds the page showing what's published (tools/release-status) on GitHub Pages: after every snapshot publish
+# and release, every 6 hours for new app releases, and by hand. Each run's summary shows the same pipeline.
+
+on:
+  workflow_run:
+    workflows: [build, release]
+    types: [completed]
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The newest run has the newest state: an older one still waiting isn't needed
+concurrency:
+  group: overview
+  cancel-in-progress: true
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    if: github.repository == 'duckduckgo/netguard'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          # Every tag, to place each commit in its release
+          fetch-depth: 0
+
+      - name: Generate the page
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node tools/release-status/generate.js --ref HEAD --out _site/index.html --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the page
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: generate
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
