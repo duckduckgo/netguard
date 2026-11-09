@@ -145,7 +145,8 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
 
                 s->udp.received += bytes;
 
-                // Process DNS response
+                // Process DNS response, which can change the buffer
+                int dns_id = dns_message_id((const uint8_t *) buffer, (size_t) bytes);
                 int block_dns = 0;
                 if (ntohs(s->udp.dest) == 53)
                     block_dns = parse_dns_response(args, s, buffer, (size_t *) &bytes);
@@ -155,7 +156,7 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
                     s->udp.state = UDP_FINISHING;
                 else {
                     // Prevent too many open files, once every query on this socket has been answered
-                    if (ntohs(s->udp.dest) == 53 && dns_session_answer_received(&s->udp.pending_queries))
+                    if (ntohs(s->udp.dest) == 53 && dns_session_answer_received(&s->udp.pending_queries, dns_id))
                         s->udp.state = UDP_FINISHING;
                 }
             }
@@ -232,7 +233,7 @@ void block_udp(const struct arguments *args,
     s->udp.source = udphdr->source;
     s->udp.dest = udphdr->dest;
     s->udp.state = UDP_BLOCKED;
-    s->udp.pending_queries = 0;
+    memset(&s->udp.pending_queries, 0, sizeof(s->udp.pending_queries));
     s->socket = -1;
 
     s->next = args->ctx->ng_session;
@@ -309,7 +310,7 @@ jboolean handle_udp(const struct arguments *args,
 
         s->udp.sent = 0;
         s->udp.received = 0;
-        s->udp.pending_queries = 0;
+        memset(&s->udp.pending_queries, 0, sizeof(s->udp.pending_queries));
 
         if (version == 4) {
             s->udp.saddr.ip4 = (__be32) ip4->saddr;
@@ -393,7 +394,7 @@ jboolean handle_udp(const struct arguments *args,
     } else {
         cur->udp.sent += datalen;
         if (ntohs(cur->udp.dest) == 53)
-            dns_session_query_sent(&cur->udp.pending_queries);
+            dns_session_query_sent(&cur->udp.pending_queries, dns_message_id(data, datalen));
     }
 
     return 1;

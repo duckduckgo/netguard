@@ -4,6 +4,7 @@
 #include <jni.h> // TODO remove this
 #include <stdint.h>
 #include <sys/types.h>
+#include "udp.h"
 
 #define EPOLL_MIN_CHECK 100 // milliseconds
 
@@ -68,7 +69,7 @@ struct udp_session {
     __be16 dest; // network notation
 
     uint8_t state;
-    uint16_t pending_queries; // DNS queries waiting for an answer
+    struct dns_pending pending_queries; // DNS queries waiting for an answer
 };
 
 struct icmp_session {
