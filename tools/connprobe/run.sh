@@ -93,6 +93,11 @@ if ! echo "$RESULT" | grep -q " 0 connected"; then
     echo "INCONCLUSIVE: some connections succeeded, so netguard could open them. Use an address the network can't" \
         "reach, eg. an IPv6 address on a network without IPv6."
     exit 2
+elif ! echo "$RESULT" | grep -q " 0 failed"; then
+    # netguard doesn't answer a connection it can't open, so the ones it saw time out. A failed one never reached it.
+    echo "INCONCLUSIVE: some connections failed on the device before reaching netguard, eg. because the VPN doesn't" \
+        "route that address, so netguard never tried to open them."
+    exit 2
 elif [ $((AFTER - BEFORE)) -ge $((COUNT / 2)) ]; then
     echo "LEAK: $((AFTER - BEFORE)) more sockets open after $COUNT connections netguard couldn't open"
     exit 1

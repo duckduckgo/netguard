@@ -28,8 +28,9 @@ Expected results, for 50 connections:
 | netguard 1.10.2 | about 100 more: one per attempt, including retries, never released |
 | With the fix | unchanged |
 
-If any connection succeeds the result is inconclusive: the network could reach the address, so netguard never
-failed to open a connection.
+The connections netguard tried to open time out in connprobe, because netguard doesn't answer a connection it
+can't open. If any connection succeeds or fails instead, the result is inconclusive: it either reached the address,
+or failed on the device without reaching netguard (eg. the VPN doesn't route that address).
 
 Remove the app afterwards with `adb uninstall dev.netguard.connprobe`.
 
