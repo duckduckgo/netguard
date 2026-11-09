@@ -41,8 +41,11 @@ command -v adb >/dev/null || fail "adb not found"
 # AppTP must be running, in a debug build
 VPN_PID=$(adb shell pidof $APP:vpn | tr -d '\r')
 [ -n "$VPN_PID" ] || fail "$APP:vpn isn't running: install a debug build of the app and turn AppTP on"
+# The VPN process always has sockets open, so finding none means its fds couldn't be listed
 sockets() {
-    adb shell "run-as $APP ls -l /proc/$VPN_PID/fd" | grep -c "socket:" || true
+    count=$(adb shell "run-as $APP ls -l /proc/$VPN_PID/fd" 2>/dev/null | grep -c "socket:") || true
+    [ "${count:-0}" -gt 0 ] || fail "Can't count the sockets of $APP:vpn (pid $VPN_PID)"
+    echo "$count"
 }
 adb shell "run-as $APP true" 2>/dev/null || fail "Can't run-as $APP: it must be a debug build"
 
@@ -81,11 +84,12 @@ echo "$VPN_UIDS" | grep -oE "[0-9]+-[0-9]+" | awk -F- -v uid="$APP_UID" '$1 <= u
 adb push "$BUILD/connprobe" /data/local/tmp/connprobe >/dev/null
 adb shell "run-as $PKG sh -c 'cat /data/local/tmp/connprobe > connprobe && chmod 700 connprobe'"
 
-BEFORE=$(sockets)
+BEFORE=$(sockets) || exit 1
 RESULT=$(adb shell "run-as $PKG ./connprobe $ADDRESS $PORT $COUNT" | tr -d '\r')
 echo "$RESULT"
 sleep 3
-AFTER=$(sockets)
+AFTER=$(sockets) || exit 1
+[ "$(adb shell pidof $APP:vpn | tr -d '\r')" = "$VPN_PID" ] || fail "$APP:vpn restarted during the run, so its sockets can't be compared"
 echo "Sockets open in AppTP ($APP:vpn, pid $VPN_PID): $BEFORE before, $AFTER after"
 echo
 
