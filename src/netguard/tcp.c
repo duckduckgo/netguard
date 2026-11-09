@@ -19,6 +19,7 @@
 
 #include "netguard.h"
 #include "tcp_window.h"
+#include "packet_headers.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Definitions
@@ -684,6 +685,7 @@ jboolean handle_tcp(const struct arguments *args,
     const struct iphdr *ip4 = (struct iphdr *) pkt;
     const struct ip6_hdr *ip6 = (struct ip6_hdr *) pkt;
     const struct tcphdr *tcphdr = (struct tcphdr *) payload;
+    // handle_ip dropped packets whose header length is invalid, so this fits in the packet
     const uint8_t tcpoptlen = (uint8_t) ((tcphdr->doff - 5) * 4);
     const uint8_t *tcpoptions = payload + sizeof(struct tcphdr);
     const uint8_t *data = payload + sizeof(struct tcphdr) + tcpoptlen;
@@ -759,28 +761,7 @@ jboolean handle_tcp(const struct arguments *args,
             // http://www.iana.org/assignments/tcp-parameters/tcp-parameters.xhtml#tcp-parameters-1
             uint16_t mss = get_default_mss(version);
             uint8_t ws = 0;
-            int optlen = tcpoptlen;
-            uint8_t *options = (uint8_t *) tcpoptions;
-            while (optlen > 0) {
-                uint8_t kind = *options;
-                uint8_t len = *(options + 1);
-                if (kind == 0) // End of options list
-                    break;
-
-                if (kind == 2 && len == 4)
-                    mss = ntohs(*((uint16_t *) (options + 2)));
-
-                else if (kind == 3 && len == 3)
-                    ws = *(options + 2);
-
-                if (kind == 1) {
-                    optlen--;
-                    options++;
-                } else {
-                    optlen -= len;
-                    options += len;
-                }
-            }
+            tcp_parse_syn_options(tcpoptions, tcpoptlen, &mss, &ws);
 
             log_print(PLATFORM_LOG_PRIORITY_WARN, "%s new session mss %u ws %u window %u",
                         packet, mss, ws, ntohs(tcphdr->window) << ws);

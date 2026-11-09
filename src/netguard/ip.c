@@ -19,14 +19,11 @@
 
 #include "netguard.h"
 #include "uid_mapping.h"
+#include "packet_headers.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Definitions
 ///////////////////////////////////////////////////////////////////////////////
-
-static int is_lower_layer(int protocol);
-
-static int is_upper_layer(int protocol);
 
 static void handle_ip(const struct arguments *args,
                const uint8_t *buffer, size_t length,
@@ -109,27 +106,6 @@ int check_tun(const struct arguments *args,
     return 0;
 }
 
-// https://en.wikipedia.org/wiki/IPv6_packet#Extension_headers
-// http://www.iana.org/assignments/protocol-numbers/protocol-numbers.xhtml
-static int is_lower_layer(int protocol) {
-    // No next header = 59
-    return (protocol == 0 || // Hop-by-Hop Options
-            protocol == 60 || // Destination Options (before routing header)
-            protocol == 43 || // Routing
-            protocol == 44 || // Fragment
-            protocol == 51 || // Authentication Header (AH)
-            protocol == 50 || // Encapsulating Security Payload (ESP)
-            protocol == 60 || // Destination Options (before upper-layer header)
-            protocol == 135); // Mobility
-}
-
-static int is_upper_layer(int protocol) {
-    return (protocol == IPPROTO_TCP ||
-            protocol == IPPROTO_UDP ||
-            protocol == IPPROTO_ICMP ||
-            protocol == IPPROTO_ICMPV6);
-}
-
 static void handle_ip(const struct arguments *args,
                const uint8_t *pkt, const size_t length,
                const int epoll_fd,
@@ -164,8 +140,12 @@ static void handle_ip(const struct arguments *args,
             return;
         }
 
-        uint8_t ipoptlen = (uint8_t) ((ip4hdr->ihl - 5) * 4);
-        payload = (uint8_t *) (pkt + sizeof(struct iphdr) + ipoptlen);
+        size_t ip4hlen = ip4_header_length(pkt, length);
+        if (ip4hlen == 0) {
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "IP4 invalid header length %u", ip4hdr->ihl);
+            return;
+        }
+        payload = (uint8_t *) (pkt + ip4hlen);
 
         if (ntohs(ip4hdr->tot_len) != length) {
             log_print(PLATFORM_LOG_PRIORITY_ERROR, "Invalid length %u header length %u",
@@ -187,31 +167,13 @@ static void handle_ip(const struct arguments *args,
 
         struct ip6_hdr *ip6hdr = (struct ip6_hdr *) pkt;
 
-        // Skip extension headers
-        uint16_t off = 0;
+        // Packets with extension headers are not supported, they're handled (dropped) as an unknown protocol
         protocol = ip6hdr->ip6_nxt;
-        if (!is_upper_layer(protocol)) {
-            log_print(PLATFORM_LOG_PRIORITY_WARN, "IP6 extension %d", protocol);
-            off = sizeof(struct ip6_hdr);
-            struct ip6_ext *ext = (struct ip6_ext *) (pkt + off);
-            while (is_lower_layer(ext->ip6e_nxt) && !is_upper_layer(protocol)) {
-                protocol = ext->ip6e_nxt;
-                log_print(PLATFORM_LOG_PRIORITY_WARN, "IP6 extension %d", protocol);
-
-                off += (8 + ext->ip6e_len);
-                ext = (struct ip6_ext *) (pkt + off);
-            }
-            if (!is_upper_layer(protocol)) {
-                off = 0;
-                protocol = ip6hdr->ip6_nxt;
-                log_print(PLATFORM_LOG_PRIORITY_WARN, "IP6 final extension %d", protocol);
-            }
-        }
 
         saddr = &ip6hdr->ip6_src;
         daddr = &ip6hdr->ip6_dst;
 
-        payload = (uint8_t *) (pkt + sizeof(struct ip6_hdr) + off);
+        payload = (uint8_t *) (pkt + sizeof(struct ip6_hdr));
 
         // TODO checksum
     } else {
@@ -256,6 +218,11 @@ static void handle_ip(const struct arguments *args,
     } else if (protocol == IPPROTO_TCP) {
         if (length - (payload - pkt) < sizeof(struct tcphdr)) {
             log_print(PLATFORM_LOG_PRIORITY_WARN, "TCP packet too short");
+            return;
+        }
+
+        if (tcp_header_length(payload, length - (payload - pkt)) == 0) {
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "TCP invalid header length");
             return;
         }
 
