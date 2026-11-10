@@ -35,6 +35,9 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOn(JNI
         return -1;
     }
 
+    // GoBackend is created again for each VPN session: replace the old reference
+    if (GO_BACKEND != NULL)
+        (*env)->DeleteGlobalRef(env, GO_BACKEND);
     GO_BACKEND = (*env)->NewGlobalRef(env, goBackend);
 
     jclass clsGoBackend = (*env)->GetObjectClass(env, goBackend);
@@ -67,6 +70,11 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOn(JNI
  * @return 1 (true) if packet is allowed, 0 (false) otherwise
  */
 int is_pkt_allowed(const uint8_t *buffer, int length) {
+    if (GO_BACKEND == NULL) {
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "GoBackend reference not set");
+        return 1;
+    }
+
     JNIEnv *env;
     jint rs = (*JVM)->AttachCurrentThread(JVM, &env, NULL);
     if (rs != JNI_OK) {
@@ -140,8 +148,8 @@ int is_pkt_allowed(const uint8_t *buffer, int length) {
 }
 
 int record_malware_block(const char *domain) {
-    if (MID_RECORD_MALWARE_BLOCK == NULL) {
-        log_print(PLATFORM_LOG_PRIORITY_ERROR, "MID_RECORD_MALWARE_BLOCK method not found");
+    if (GO_BACKEND == NULL || MID_RECORD_MALWARE_BLOCK == NULL) {
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "GoBackend callback not set");
         return 1;
     }
 
@@ -164,13 +172,15 @@ int record_malware_block(const char *domain) {
 
 }
 
-JNIEXPORT void JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOff(JNIEnv *env, jclass c, jint handle)
+JNIEXPORT void JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOff(JNIEnv *env, jobject goBackend, jint handle)
 {
     wgTurnOff(handle);
 
-    // Cleanup globals
-    if (GO_BACKEND != NULL)
+    // Cleanup globals, unless a newer GoBackend has turned on since
+    if (GO_BACKEND != NULL && (*env)->IsSameObject(env, GO_BACKEND, goBackend)) {
         (*env)->DeleteGlobalRef(env, GO_BACKEND);
+        GO_BACKEND = NULL;
+    }
 
     cleanup_uid_cache();
     wg_close_pcap();
