@@ -17,6 +17,7 @@ extern char *wgVersion();
 
 static JavaVM *JVM = NULL;
 static jobject GO_BACKEND = NULL;
+static pthread_mutex_t GO_BACKEND_LOCK = PTHREAD_MUTEX_INITIALIZER;
 static jmethodID MID_SHOULD_ALLOW = NULL;
 static jmethodID MID_RECORD_MALWARE_BLOCK = NULL;
 static jint SDK = 0;
@@ -36,9 +37,11 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOn(JNI
     }
 
     // GoBackend is created again for each VPN session: replace the old reference
+    pthread_mutex_lock(&GO_BACKEND_LOCK);
     if (GO_BACKEND != NULL)
         (*env)->DeleteGlobalRef(env, GO_BACKEND);
     GO_BACKEND = (*env)->NewGlobalRef(env, goBackend);
+    pthread_mutex_unlock(&GO_BACKEND_LOCK);
 
     jclass clsGoBackend = (*env)->GetObjectClass(env, goBackend);
     const char *shouldAllowSig = "(ILjava/lang/String;ILjava/lang/String;ILjava/lang/String;I)Z";
@@ -64,17 +67,24 @@ JNIEXPORT jint JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOn(JNI
 }
 
 /**
+ * Returns a local reference to the current GoBackend, or NULL if none is set.
+ * The local reference stays valid even if wgTurnOn/wgTurnOff deletes the global one meanwhile,
+ * and must be released with DeleteLocalRef.
+ */
+static jobject go_backend_local_ref(JNIEnv *env) {
+    pthread_mutex_lock(&GO_BACKEND_LOCK);
+    jobject backend = GO_BACKEND != NULL ? (*env)->NewLocalRef(env, GO_BACKEND) : NULL;
+    pthread_mutex_unlock(&GO_BACKEND_LOCK);
+    return backend;
+}
+
+/**
  * Called from Go code to check if the packet is allowed
  * @param buffer IP datagram to check
  * @param length length of the datagram
  * @return 1 (true) if packet is allowed, 0 (false) otherwise
  */
 int is_pkt_allowed(const uint8_t *buffer, int length) {
-    if (GO_BACKEND == NULL) {
-        log_print(PLATFORM_LOG_PRIORITY_ERROR, "GoBackend reference not set");
-        return 1;
-    }
-
     JNIEnv *env;
     jint rs = (*JVM)->AttachCurrentThread(JVM, &env, NULL);
     if (rs != JNI_OK) {
@@ -126,13 +136,19 @@ int is_pkt_allowed(const uint8_t *buffer, int length) {
     if (SDK <= 28) // Android 9 Pie
         uid = get_uid(version, IPPROTO_TCP, saddr, sport, daddr, dport);
 
+    jobject backend = go_backend_local_ref(env);
+    if (backend == NULL) {
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "GoBackend reference not set");
+        return 1;
+    }
+
     // Prep call to Kotlin
     jstring jsource = (*env)->NewStringUTF(env, source);
     jstring jdest = (*env)->NewStringUTF(env, dest);
     jstring jsni = (*env)->NewStringUTF(env, sn);
 
     jboolean jallow = (*env)->CallBooleanMethod(
-            env, GO_BACKEND, MID_SHOULD_ALLOW,
+            env, backend, MID_SHOULD_ALLOW,
             IPPROTO_TCP, jsource, sport, jdest, dport, jsni, uid);
     jniCheckException(env);
 
@@ -140,6 +156,7 @@ int is_pkt_allowed(const uint8_t *buffer, int length) {
     (*env)->DeleteLocalRef(env, jsource);
     (*env)->DeleteLocalRef(env, jdest);
     (*env)->DeleteLocalRef(env, jsni);
+    (*env)->DeleteLocalRef(env, backend);
 
     if (jallow == JNI_FALSE)
         return 0;
@@ -148,8 +165,8 @@ int is_pkt_allowed(const uint8_t *buffer, int length) {
 }
 
 int record_malware_block(const char *domain) {
-    if (GO_BACKEND == NULL || MID_RECORD_MALWARE_BLOCK == NULL) {
-        log_print(PLATFORM_LOG_PRIORITY_ERROR, "GoBackend callback not set");
+    if (MID_RECORD_MALWARE_BLOCK == NULL) {
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "MID_RECORD_MALWARE_BLOCK method not found");
         return 1;
     }
 
@@ -160,13 +177,20 @@ int record_malware_block(const char *domain) {
         return 1;
     }
 
+    jobject backend = go_backend_local_ref(env);
+    if (backend == NULL) {
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "GoBackend reference not set");
+        return 1;
+    }
+
     // Prep call to Kotlin
     jstring jdomain = (*env)->NewStringUTF(env, domain);
-    (*env)->CallVoidMethod(env, GO_BACKEND, MID_RECORD_MALWARE_BLOCK, jdomain);
+    (*env)->CallVoidMethod(env, backend, MID_RECORD_MALWARE_BLOCK, jdomain);
     jniCheckException(env);
 
     // cleanup
     (*env)->DeleteLocalRef(env, jdomain);
+    (*env)->DeleteLocalRef(env, backend);
 
     return 0;
 
@@ -176,13 +200,18 @@ JNIEXPORT void JNICALL Java_com_wireguard_android_backend_GoBackend_wgTurnOff(JN
 {
     wgTurnOff(handle);
 
-    // Cleanup globals, unless a newer GoBackend has turned on since
+    // Cleanup globals, unless a newer GoBackend has turned on since and still uses them
+    int owner = 0;
+    pthread_mutex_lock(&GO_BACKEND_LOCK);
     if (GO_BACKEND != NULL && (*env)->IsSameObject(env, GO_BACKEND, goBackend)) {
         (*env)->DeleteGlobalRef(env, GO_BACKEND);
         GO_BACKEND = NULL;
+        owner = 1;
     }
+    pthread_mutex_unlock(&GO_BACKEND_LOCK);
 
-    cleanup_uid_cache();
+    if (owner)
+        cleanup_uid_cache();
     wg_close_pcap();
 }
 
