@@ -30,7 +30,9 @@ Expected results, for 50 connections:
 
 The connections netguard tried to open time out in connprobe, because netguard doesn't answer a connection it
 can't open. If any connection succeeds or fails instead, the result is inconclusive: it either reached the address,
-or failed on the device without reaching netguard (eg. the VPN doesn't route that address).
+or failed on the device without reaching netguard (eg. the VPN doesn't route that address). It's also inconclusive
+when netguard logged no failed `connect()`: then no connection reached the code this checks, even if all of them timed
+out (eg. Android blocked the probe app's network).
 
 Remove the app afterwards with `adb uninstall dev.netguard.connprobe`.
 
@@ -38,4 +40,4 @@ Remove the app afterwards with `adb uninstall dev.netguard.connprobe`.
 
 Same as for `tools/dnsprobe`: the probe must run as an app that AppTP covers. `adb shell` is outside AppTP, AppTP
 never protects `com.duckduckgo.*` packages, and a new app has no network until it leaves the most restricted
-standby bucket.
+standby bucket and, on recent Android versions, is on the deviceidle allowlist. The script does both.

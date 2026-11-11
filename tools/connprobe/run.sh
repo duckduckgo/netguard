@@ -72,11 +72,13 @@ adb install -r "$BUILD/connprobe.apk" >/dev/null || {
     adb uninstall $PKG >/dev/null 2>&1 || true
     adb install "$BUILD/connprobe.apk" >/dev/null
 }
-# A new app that was never opened starts in the most restricted standby bucket, which blocks its network
+# A new app that was never opened starts in the most restricted standby bucket, which blocks its network. On recent
+# Android versions that isn't enough: it also needs to be on the deviceidle allowlist
 adb shell am set-standby-bucket $PKG active
+adb shell cmd deviceidle whitelist +$PKG >/dev/null
 
-# The app must be covered by AppTP's VPN
-APP_UID=$(adb shell dumpsys package $PKG | grep -m1 -oE "userId=[0-9]+" | cut -d= -f2)
+# The app must be covered by AppTP's VPN. Android 16 prints the uid as appId=, older versions as userId=
+APP_UID=$(adb shell dumpsys package $PKG | grep -m1 -oE "(userId|appId)=[0-9]+" | cut -d= -f2)
 VPN_UIDS=$(adb shell dumpsys connectivity | grep "VPN CONNECTED" | grep -oE "Uids: <[^>]*>" | head -1)
 echo "$VPN_UIDS" | grep -oE "[0-9]+-[0-9]+" | awk -F- -v uid="$APP_UID" '$1 <= uid && uid <= $2 {found = 1} END {exit !found}' ||
     fail "AppTP's VPN doesn't cover the probe app (uid $APP_UID): protect it in App Tracking Protection"
@@ -85,10 +87,13 @@ adb push "$BUILD/connprobe" /data/local/tmp/connprobe >/dev/null
 adb shell "run-as $PKG sh -c 'cat /data/local/tmp/connprobe > connprobe && chmod 700 connprobe'"
 
 BEFORE=$(sockets) || exit 1
+adb logcat -c
 RESULT=$(adb shell "run-as $PKG ./connprobe $ADDRESS $PORT $COUNT" | tr -d '\r')
 echo "$RESULT"
 sleep 3
 AFTER=$(sockets) || exit 1
+# netguard logs each connect() that fails straight away, the path this checks
+REACHED=$(adb logcat -d -s NetGuard.JNI | grep -c "connect error") || true
 [ "$(adb shell pidof $APP:vpn | tr -d '\r')" = "$VPN_PID" ] || fail "$APP:vpn restarted during the run, so its sockets can't be compared"
 echo "Sockets open in AppTP ($APP:vpn, pid $VPN_PID): $BEFORE before, $AFTER after"
 echo
@@ -101,6 +106,12 @@ elif ! echo "$RESULT" | grep -q " 0 failed"; then
     # netguard doesn't answer a connection it can't open, so the ones it saw time out. A failed one never reached it.
     echo "INCONCLUSIVE: some connections failed on the device before reaching netguard, eg. because the VPN doesn't" \
         "route that address, so netguard never tried to open them."
+    exit 2
+elif [ "${REACHED:-0}" -eq 0 ]; then
+    # A connection that never reached netguard times out like one netguard couldn't open, eg. when Android blocks the
+    # probe app's network
+    echo "INCONCLUSIVE: netguard logged no failed connect(), so no connection reached the code this checks. Check that" \
+        "the probe app has network access, and that netguard logs (a debug build)."
     exit 2
 elif [ $((AFTER - BEFORE)) -ge $((COUNT / 2)) ]; then
     echo "LEAK: $((AFTER - BEFORE)) more sockets open after $COUNT connections netguard couldn't open"
