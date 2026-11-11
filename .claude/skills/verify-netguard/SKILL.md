@@ -113,6 +113,16 @@ adb shell input keyevent KEYCODE_BACK
 - Use the same network (Wi-Fi or mobile data) for the `main` and branch runs, and note which in the report.
 - Android 15+: a test app of your own needs `adb shell cmd deviceidle whitelist +<package>` to keep network access in the background.
 
+### Check netguard is handling the traffic
+
+Do this before every trigger, on each build. A VPN that's up doesn't mean netguard sees the packets.
+
+1. Only the feature under test is on. With NetP and AppTP both on, they share one VPN and NetP's stack handles the traffic: an AppTP check then runs through WireGuard and netguard sees nothing.
+2. `adb logcat -c`, browse to any site for a few seconds, then `adb logcat -d -s NetGuard.JNI | wc -l`. The debug app runs netguard at DEBUG level, so this is in the hundreds. Zero means netguard isn't handling the traffic: the wrong feature is on, the VPN didn't restart with the new library, or the app isn't a debug build.
+3. Confirm the running library is yours, e.g. a line only your build logs, or the `[PROBE]` lines when you added them.
+
+If any of these fails, fix the setup before running the trigger. A result from a setup that fails them is not a result for the change: say the check couldn't run, and why.
+
 ## 4. Capture evidence
 
 - **Logs:** `adb logcat -c` before the trigger, then `adb logcat -s NetGuard.JNI` (add the app's own tags when the decision happens in Kotlin).

@@ -1,6 +1,6 @@
 ---
 name: review-netguard
-description: Review a netguard PR as an independent reviewer - read the diff for netguard's known failure modes, prove each finding with a run, verify on a device, and post a PASS / PASS+NOTES / FAIL verdict. Use when asked to review a netguard PR, or a branch someone else wrote.
+description: Review a netguard PR as an independent reviewer - read the diff for netguard's known failure modes, prove each finding with a run, verify on a device, and post a PASS / PASS+NOTES / FAIL / INCOMPLETE verdict. Use when asked to review a netguard PR, or a branch someone else wrote.
 ---
 
 # Review netguard
@@ -72,18 +72,23 @@ Rerun each of its findings yourself; keep only what reproduces. A finding both r
 
 ## 4. Verify on a device
 
-Follow "Reviewing a PR" in the `verify-netguard` skill: the PR's own test steps first, then the feature check, comparing with the base branch. If no phone is available, say the device check wasn't run; the verdict can't be `PASS` without it for a change that affects runtime behavior.
+Follow "Reviewing a PR" in the `verify-netguard` skill: the PR's own test steps first, then the feature check, comparing with the base branch. Run its "Check netguard is handling the traffic" first: most inconclusive device runs are a setup that never reached netguard. If no phone is available, say the device check wasn't run; the verdict can't be `PASS` without it for a change that affects runtime behavior.
+
+When a device result is inconclusive, explain it from the code before reporting it: read both sides of the path (netguard and the app's callbacks, in the DuckDuckGo Android repository) rather than guessing which side drops the traffic. An explanation you didn't check is a guess; label it so.
 
 ## 5. Verdict
 
-- **`PASS`:** no findings, and the device check passed.
-- **`PASS+NOTES`:** no findings that block merging; notes for the author (existing bugs found on the base, missing tests, a stale doc).
-- **`FAIL`:** at least one proven finding, or a required check that failed, wasn't run, or was inconclusive.
+- **`PASS`:** no findings, and every required check passed.
+- **`PASS+NOTES`:** no findings that block merging; notes for the author (existing bugs found on the base, a weak or missing test, a stale doc).
+- **`FAIL`:** at least one proven finding: a run shows the change is wrong.
+- **`INCOMPLETE`:** no proven findings, but a required check couldn't run or was inconclusive (no phone, a setup that didn't reach netguard, a flaky trigger). Say what's missing and what it would take. This says nothing against the change; don't use `FAIL` for it.
 
-Draft the comment and show it to the user. Post it only after they confirm, as a comment, never as an approval:
+A weakness in the PR's test steps or tools (a probe that reports OK without exercising the fix) is a note, not a finding, unless a run shows the change itself is wrong.
+
+Draft the comment and show it to the user. Post it only after they confirm, as a comment, never as an approval. Before posting `INCOMPLETE`, ask the user whether to fix the gap first; a review that can still be completed is usually worth finishing:
 
 ```text
-Review verdict: <PASS | PASS+NOTES | FAIL>
+Review verdict: <PASS | PASS+NOTES | FAIL | INCOMPLETE>
 Reviewed by: <agent and model> (did not write this change)
 Base: <SHA> · Head: <SHA> · Patch-id: <patch-id>
 
