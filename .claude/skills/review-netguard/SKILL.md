@@ -72,7 +72,7 @@ Rerun each of its findings yourself; keep only what reproduces. A finding both r
 
 ## 4. Verify on a device
 
-Follow "Reviewing a PR" in the `verify-netguard` skill: the PR's own test steps first, then the feature check, comparing with the base branch. Run its "Check netguard is handling the traffic" first: most inconclusive device runs are a setup that never reached netguard. If no phone is available, say the device check wasn't run; the verdict can't be `PASS` without it for a change that affects runtime behavior.
+Follow "Reviewing a PR" in the `verify-netguard` skill: the PR's own test steps first, then the feature check, comparing with the base branch. Run its "Check netguard is handling the trigger's traffic" first: most inconclusive device runs are a trigger whose packets never reached netguard. If no phone is available, say the device check wasn't run; the verdict can't be `PASS` without it for a change that affects runtime behavior.
 
 When a device result is inconclusive, explain it from the code before reporting it: read both sides of the path (netguard and the app's callbacks, in the DuckDuckGo Android repository) rather than guessing which side drops the traffic. An explanation you didn't check is a guess; label it so.
 

@@ -110,18 +110,20 @@ adb shell input keyevent KEYCODE_BACK
 - The VPN permission dialog is a system dialog; it shows up in the dump too, and its OK button can be tapped the same way.
 - After each step, check the result (the next dump, or the `Transports: VPN` check), not the tap.
 - Ask the user only when the dump can't reach something (a sign-in in a web view, a fingerprint prompt) or a tap doesn't change the screen after two tries. Say what you tried.
-- Use the same network (Wi-Fi or mobile data) for the `main` and branch runs, and note which in the report.
-- Android 15+: a test app of your own needs `adb shell cmd deviceidle whitelist +<package>` to keep network access in the background.
+- Use the same network for the base and branch runs, and note which in the report. When the trigger depends on the network (e.g. a connection to an IPv6 address failing straight away needs a network without IPv6), confirm the network qualifies first.
 
-### Check netguard is handling the traffic
+### Check netguard is handling the trigger's traffic
 
-Do this before every trigger, on each build. A VPN that's up doesn't mean netguard sees the packets.
+Do this before every trigger, on each build. A VPN that's up, or netguard logging other apps' traffic, doesn't mean the trigger's own packets reach netguard.
 
-1. Only the feature under test is on. With NetP and AppTP both on, they share one VPN and NetP's stack handles the traffic: an AppTP check then runs through WireGuard and netguard sees nothing.
-2. `adb logcat -c`, browse to any site for a few seconds, then `adb logcat -d -s NetGuard.JNI | wc -l`. The debug app runs netguard at DEBUG level, so this is in the hundreds. Zero means netguard isn't handling the traffic: the wrong feature is on, the VPN didn't restart with the new library, or the app isn't a debug build.
-3. Confirm the running library is yours, e.g. a line only your build logs, or the `[PROBE]` lines when you added them.
+1. **A test app of your own has network access.** Android 15+ can cut off the network of an app that was never launched: allowlist it with `adb shell cmd deviceidle whitelist +<package>` before running it. A cut-off app's connections time out exactly like ones netguard drops, so nothing else tells you.
+2. **Only the feature under test is on.** With NetP and AppTP both on, they share one VPN and NetP's stack handles the traffic, so netguard sees none of it.
+3. **netguard is running your library.** `adb logcat -c`, browse for a few seconds, then `adb logcat -d -s NetGuard.JNI | wc -l`: the debug app runs netguard at DEBUG level, so this is in the hundreds. Then look for a line only your build logs, or your `[PROBE]` lines.
+4. **The trigger's own packets reach netguard.** Run the trigger once and find its packets in `adb logcat -d -s NetGuard.JNI`, e.g. by its destination address. If they aren't there, the result says nothing about the change.
 
-If any of these fails, fix the setup before running the trigger. A result from a setup that fails them is not a result for the change: say the check couldn't run, and why.
+If any of these fails, fix the setup before running the trigger; a result from such a setup is not a result for the change. If you can't fix it, say the check couldn't run, and why.
+
+To find an app's uid, e.g. to match it in logs: `adb shell dumpsys package <package> | grep -oE '(userId|appId)=[0-9]+'`. Android 16 prints only `appId=`.
 
 ## 4. Capture evidence
 
@@ -136,6 +138,14 @@ Save raw logs and pcaps outside the repo. Count from the raw file with `grep -c`
 For each check: the trigger, the phone and Android version, the app version, and the result on `main` and on the branch, side by side. Say plainly when a check was not run or was inconclusive; a fix verified only by unit tests is unverified.
 
 netguard is a public repository. Keep app-internal names, internal links and user data out of commits, PR descriptions and issue comments.
+
+## 6. Restore the phone
+
+Leave the phone as you found it, and say in the report what you restored:
+
+- Reinstall the original app: `adb install --no-incremental -r app-debug.apk`, the copy pulled in step 3. Same key, so it keeps the app's data. If you had to uninstall a differently signed app, say so: its data is gone and the user has to reinstall it.
+- Uninstall test apps you installed (`adb uninstall <package>`).
+- Turn features back to how they were (AppTP, NetP), and remove files you left on the device (e.g. `/sdcard/ui.xml`).
 
 ## Reviewing a PR
 

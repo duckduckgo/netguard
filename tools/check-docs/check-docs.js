@@ -54,7 +54,8 @@ function parse(text) {
 }
 
 function looksLikePath(span) {
-    if (/[\s<>$*~|"'(]/.test(span) || span.startsWith('-')) return false;
+    // Absolute paths are on the device or another machine (/sdcard/...), never in the repo
+    if (/[\s<>$*~|"'(]/.test(span) || span.startsWith('-') || span.startsWith('/')) return false;
     // ./name runs a program from the current directory, often a built one (./test_tls): only a script is a file to find
     if (/^\.\/[^/]+$/.test(span)) return /\.(sh|js|py)$/.test(span);
     return span.includes('/') || FILE_EXTENSIONS.test(span);

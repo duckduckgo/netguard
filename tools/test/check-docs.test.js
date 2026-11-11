@@ -20,7 +20,7 @@ function repo(changes = {}) {
             '```',
         ].join('\n'),
         '.claude/skills/verify/SKILL.md': 'Count `TLS server name not found` under the `NetGuard.JNI` tag; see [SNI](references/sni.md).',
-        '.claude/skills/verify/references/sni.md': 'Run `./test_tls`. A plain `grep VPN` also matches `NOT_VPN`.',
+        '.claude/skills/verify/references/sni.md': 'Run `./test_tls`. A plain `grep VPN` also matches `NOT_VPN`. Remove `/sdcard/ui.xml`.',
         'android/publish_local.sh': '',
         'src/netguard/tls.c': 'log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found"); // NetGuard.JNI',
         'src/wireguard/jni.c': 'int is_pkt_allowed(const uint8_t *buffer, int length) {}',
