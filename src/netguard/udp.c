@@ -417,8 +417,10 @@ static int open_udp_socket(const struct arguments *args,
     }
 
     // Protect socket
-    if (protect_socket(args, sock) < 0)
+    if (protect_socket(args, sock) < 0) {
+        close(sock);
         return -1;
+    }
 
     // Check for broadcast/multicast
     if (cur->version == 4) {
