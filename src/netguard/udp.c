@@ -18,6 +18,7 @@
 */
 
 #include "netguard.h"
+#include "dns_session.h"
 
 ///////////////////////////////////////////////////////////////////////////////
 // Definitions
@@ -144,7 +145,8 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
 
                 s->udp.received += bytes;
 
-                // Process DNS response
+                // Process DNS response, which can change the buffer
+                int dns_id = dns_message_id((const uint8_t *) buffer, (size_t) bytes);
                 int block_dns = 0;
                 if (ntohs(s->udp.dest) == 53)
                     block_dns = parse_dns_response(args, s, buffer, (size_t *) &bytes);
@@ -153,8 +155,8 @@ void check_udp_socket(const struct arguments *args, const struct epoll_event *ev
                 if (block_dns == 0 && write_udp(args, &s->udp, buffer, (size_t) bytes) < 0)
                     s->udp.state = UDP_FINISHING;
                 else {
-                    // Prevent too many open files
-                    if (ntohs(s->udp.dest) == 53)
+                    // Prevent too many open files, once every query on this socket has been answered
+                    if (ntohs(s->udp.dest) == 53 && dns_session_answer_received(&s->udp.pending_queries, dns_id))
                         s->udp.state = UDP_FINISHING;
                 }
             }
@@ -185,7 +187,8 @@ int has_udp_session(const struct arguments *args, const uint8_t *pkt, const uint
                              memcmp(&cur->udp.daddr.ip6, &ip6->ip6_dst, 16) == 0)))
         cur = cur->next;
 
-    return (cur != NULL);
+    // The next query from the socket of a finished DNS session starts a new session
+    return (cur != NULL && !dns_session_finished(ntohs(cur->udp.dest), cur->udp.state));
 }
 
 void block_udp(const struct arguments *args,
@@ -230,6 +233,7 @@ void block_udp(const struct arguments *args,
     s->udp.source = udphdr->source;
     s->udp.dest = udphdr->dest;
     s->udp.state = UDP_BLOCKED;
+    memset(&s->udp.pending_queries, 0, sizeof(s->udp.pending_queries));
     s->socket = -1;
 
     s->next = args->ctx->ng_session;
@@ -271,6 +275,13 @@ jboolean handle_udp(const struct arguments *args,
         inet_ntop(AF_INET6, &ip6->ip6_dst, dest, sizeof(dest));
     }
 
+    // DNS clients may send their next query from the same socket after we closed its session
+    if (cur != NULL && dns_session_finished(ntohs(cur->udp.dest), cur->udp.state)) {
+        log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP new DNS session from %s/%u to %s/%u replacing state %d",
+                    source, ntohs(udphdr->source), dest, ntohs(udphdr->dest), cur->udp.state);
+        cur = NULL;
+    }
+
     if (cur != NULL && cur->udp.state != UDP_ACTIVE) {
         log_print(PLATFORM_LOG_PRIORITY_INFO, "UDP ignore session from %s/%u to %s/%u state %d",
                     source, ntohs(udphdr->source), dest, ntohs(udphdr->dest), cur->udp.state);
@@ -299,6 +310,7 @@ jboolean handle_udp(const struct arguments *args,
 
         s->udp.sent = 0;
         s->udp.received = 0;
+        memset(&s->udp.pending_queries, 0, sizeof(s->udp.pending_queries));
 
         if (version == 4) {
             s->udp.saddr.ip4 = (__be32) ip4->saddr;
@@ -379,8 +391,11 @@ jboolean handle_udp(const struct arguments *args,
             cur->udp.state = UDP_FINISHING;
             return 0;
         }
-    } else
+    } else {
         cur->udp.sent += datalen;
+        if (ntohs(cur->udp.dest) == 53)
+            dns_session_query_sent(&cur->udp.pending_queries, dns_message_id(data, datalen));
+    }
 
     return 1;
 }
