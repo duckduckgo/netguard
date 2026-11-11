@@ -59,13 +59,13 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
         for _, buf := range bufs {
             // Skip uninitialized or empty buffers
             if len(buf) <= offset {
-                C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping invalid packet, too short"))
+                androidLog(C.ANDROID_LOG_DEBUG, tag, "Skipping invalid packet, too short")
                 continue
             }
             switch buf[offset] >> 4 {
             case ipv4.Version:
                 if len(buf) < offset+ipv4.HeaderLen {
-                    C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 packet"))
+                    androidLog(C.ANDROID_LOG_DEBUG, tag, "Skipping bad IPv4 packet")
                     continue
                 }
 
@@ -74,7 +74,7 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
                 if protocol == 0x11 { // UDP
                     // Extract UDP ports
                     if len(buf) < offset+ipv4.HeaderLen+8 {
-                        C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping short UDP packet"))
+                        androidLog(C.ANDROID_LOG_DEBUG, tag, "Skipping short UDP packet")
                         continue
                     }
                     // Extract the ports (skip IP and check transport layer headers)
@@ -89,7 +89,7 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
                         shouldBlock, blockedDomain := WasDNSMalwareBlocked(dnsData)
                         if shouldBlock {
                             logMessage := "DNS malware was blocked for domain: " + blockedDomain + " due to 'blocked:m' TXT record"
-                            C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring(logMessage))
+                            androidLog(C.ANDROID_LOG_DEBUG, tag, logMessage)
 
                             // call back into JVM and let the packet flow normally
                             cBlockedDomain := C.CString(blockedDomain)
@@ -148,7 +148,7 @@ func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int)
             case ipv4.Version:
                 // Skip malformed IPv4 packets.
                 if len(buf) < ipv4.HeaderLen {
-                    C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 pkt"))
+                    androidLog(C.ANDROID_LOG_DEBUG, tag, "Skipping bad IPv4 pkt")
                     sizes[i] = 0
                 } else {
                     // Check the IP protocol field (offset + 9 for IPv4).
@@ -157,7 +157,7 @@ func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int)
                         // Use native function to decide whether to allow this packet.
                         allow := int(C.is_pkt_allowed((*C.char)(unsafe.Pointer(&buf[offset])), C.int(sizes[i]+offset)))
                         if allow == 0 {
-                            C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Blocking connection"))
+                            androidLog(C.ANDROID_LOG_DEBUG, tag, "Blocking connection")
                             sizes[i] = 0 // Set size to 0 to block packet.
                         }
                     }
@@ -184,7 +184,7 @@ func logInvalidPacket(buf []byte, offset int, size int, tag *C.char) {
     previewLen := min(20, len(buf)-offset)
     headerPreview := buf[offset : offset+previewLen]
     msg := fmt.Sprintf("Invalid IP packet: version=%d, size=%d, firstByte=0x%02x, preview=% x", version, size, buf[offset], headerPreview)
-    C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring(msg))
+    androidLog(C.ANDROID_LOG_DEBUG, tag, msg)
 }
 
 func (tunWrapper *NativeTunWrapper) Events() <-chan tun.Event {
