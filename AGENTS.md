@@ -83,6 +83,8 @@ This file and the skills in `.claude/skills` describe the repo. If a step in the
 ### Verifying changes
 Unit tests are not enough. Before calling a change to `src/netguard` or `src/wireguard` done, verify it on a device with the `verify-netguard` skill (`.claude/skills/verify-netguard/SKILL.md`): the change built into the app, compared with `main` on the same phone.
 
+To review someone else's PR, use the `review-netguard` skill (`.claude/skills/review-netguard/SKILL.md`): it proves each finding with a run, verifies on a device, and drafts a PASS / PASS+NOTES / FAIL verdict comment.
+
 ## Development Notes
 
 - **NDK Version**: 21.4.7075529
