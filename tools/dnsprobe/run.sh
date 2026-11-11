@@ -53,11 +53,13 @@ adb install -r "$BUILD/dnsprobe.apk" >/dev/null || {
     adb uninstall $PKG >/dev/null 2>&1 || true
     adb install "$BUILD/dnsprobe.apk" >/dev/null
 }
-# A new app that was never opened starts in the most restricted standby bucket, which blocks its network
+# A new app that was never opened starts in the most restricted standby bucket, which blocks its network. On recent
+# Android versions that isn't enough: it also needs to be on the deviceidle allowlist
 adb shell am set-standby-bucket $PKG active
+adb shell cmd deviceidle whitelist +$PKG >/dev/null
 
-# The app must be covered by AppTP's VPN
-APP_UID=$(adb shell dumpsys package $PKG | grep -m1 -oE "userId=[0-9]+" | cut -d= -f2)
+# The app must be covered by AppTP's VPN. Android 16 prints the uid as appId=, older versions as userId=
+APP_UID=$(adb shell dumpsys package $PKG | grep -m1 -oE "(userId|appId)=[0-9]+" | cut -d= -f2)
 VPN_UIDS=$(adb shell dumpsys connectivity | grep "VPN CONNECTED" | grep -oE "Uids: <[^>]*>" | head -1)
 if [ -z "$VPN_UIDS" ]; then
     echo "== No VPN running: the probe runs without App Tracking Protection"

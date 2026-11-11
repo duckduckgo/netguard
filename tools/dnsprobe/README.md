@@ -39,5 +39,6 @@ The probe has to send its queries from an app that AppTP covers, which rules out
 - **`adb shell` is outside AppTP.** The shell user (uid 2000) isn't part of AppTP's VPN, so the probe runs as the
   `dev.netguard.dnsprobe` app instead, with `run-as`. The app has no code; it only gives the probe an app uid.
 - **AppTP never protects packages named `com.duckduckgo.*`**, so the app is named `dev.netguard.dnsprobe`.
-- **A newly installed app has no network** until it leaves the most restricted standby bucket. The script moves
-  it with `am set-standby-bucket`; otherwise every send fails with "Operation not permitted".
+- **A newly installed app has no network** until it leaves the most restricted standby bucket and, on recent Android
+  versions, is on the deviceidle allowlist. The script does both (`am set-standby-bucket`, `cmd deviceidle whitelist`);
+  otherwise every send fails with "Operation not permitted".
