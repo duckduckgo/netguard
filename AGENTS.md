@@ -70,7 +70,7 @@ The native code is built via CMake during the Gradle build. CMake configuration 
 For standalone native tests:
 ```bash
 cd src/test
-make          # Build test_tls, test_tls_split, test_tls_fuzz, test_tcp_window, test_packet_headers
+make          # Build test_tls, test_tls_split, test_tls_fuzz, test_tcp_window, test_packet_headers, test_dns_session
 ./test_tls    # Run each test executable
 make clean    # Clean test artifacts
 ```
