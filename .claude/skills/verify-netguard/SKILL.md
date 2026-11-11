@@ -1,15 +1,23 @@
 ---
 name: verify-netguard
-description: Verify a netguard change on an Android device, not only in unit tests. Use before calling any change to src/netguard or src/wireguard done, when reproducing a netguard bug, or when measuring netguard throughput or CPU.
+description: Verify a netguard change on an Android device, not only in unit tests. Use before calling any change to src/netguard or src/wireguard done, when reviewing or testing a netguard PR, when reproducing a netguard bug, or when measuring netguard throughput or CPU.
 ---
 
 # Verify netguard
 
 Unit tests in `src/test` prove a function. This skill proves the change works in the app: a netguard library built from your checkout, inside the DuckDuckGo app, on a real phone, with real traffic.
 
-Every check compares two builds of the library on the same phone, app, network and steps: one built from `main` (or the release the app ships) and one from your branch. A result without its `main` counterpart is not evidence.
+Every check compares two builds of the library on the same phone, app, network and steps: one built from `main` (or the release the app ships) and one from your branch. A result without its `main` counterpart is not evidence. Reviewing a PR? Read "Reviewing a PR" at the end first: the comparison is with the PR's base branch.
 
 If a step here fails or is wrong because the repo changed (a command, a path, a log message), fix this skill in the same commit as your change and say so in the PR. Don't work around it silently.
+
+## Before you start
+
+Check these first, and tell the user what's missing before building anything:
+
+- A phone on `adb devices`, with the DuckDuckGo debug app (see step 3 if it isn't installed).
+- The Android SDK with NDK 21.4.7075529, cmake 3.22.1 and build-tools 36.0.0. The paths below assume macOS (`~/Library/Android/sdk`); on Linux the SDK is usually `~/Android/Sdk`.
+- `ninja` and `go` on the PATH.
 
 ## 1. Pick the feature check
 
@@ -118,3 +126,12 @@ Save raw logs and pcaps outside the repo. Count from the raw file with `grep -c`
 For each check: the trigger, the phone and Android version, the app version, and the result on `main` and on the branch, side by side. Say plainly when a check was not run or was inconclusive; a fix verified only by unit tests is unverified.
 
 netguard is a public repository. Keep app-internal names, internal links and user data out of commits, PR descriptions and issue comments.
+
+## Reviewing a PR
+
+The same steps, with four differences:
+
+1. **Check out and find the base.** `gh pr checkout <number>`, then `gh pr view <number> --json baseRefName`. Build the comparison from that base branch, not `main`: for a stacked PR, comparing with `main` tests the PRs below it too.
+2. **Run the author's steps first.** Use the trigger and pass in the PR's "Steps to test this PR", then the feature file for what the diff touches, then the edge cases you think the author missed. If the PR gives no steps, write your own trigger and pass as in step 1 and say in the review that they were missing.
+3. **Don't change the PR or this skill.** If a step here is stale, say so in the review; the author fixes it.
+4. **Post the result as a review comment**, so it isn't lost in your terminal: each check with the base and PR results side by side, as in step 5, and what you didn't check. Ask the user before posting.

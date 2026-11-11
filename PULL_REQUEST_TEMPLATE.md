@@ -13,7 +13,12 @@ Task/Issue URL:
 ### Description
 
 ### Steps to test this PR
+<!--
+For changes to src/netguard or src/wireguard, give what a reviewer (or their agent, with the verify-netguard skill) needs
+to check it on a device against the base branch: the feature check from .claude/skills/verify-netguard/references, or
+your own trigger (the exact steps) and pass (what differs between the base and this PR, and where to see it).
+-->
 
 _Feature 1_
-- [ ]
-- [ ]
+- [ ] Trigger:
+- [ ] Pass:
