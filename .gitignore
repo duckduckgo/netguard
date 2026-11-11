@@ -5,8 +5,8 @@ CMakeCache.txt
 src/.vscode/
 *.o
 *test_tls
-.claude/
-CLAUDE.md
+.claude/*
+!.claude/skills/
 test_tls_split
 test_tls_fuzz
 test_tcp_window

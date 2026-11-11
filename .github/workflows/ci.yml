@@ -25,6 +25,9 @@ jobs:
       - name: Run the release command tests
         run: node --test tools/test/*.test.js
 
+      - name: Check the agent docs match the repo
+        run: node tools/check-docs/check-docs.js
+
       - name: Report Test Results
         run: |
           if [ $? -eq 0 ]; then
