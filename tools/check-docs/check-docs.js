@@ -10,7 +10,7 @@ const fs = require('fs');
 const path = require('path');
 
 // Log text the skill counts with grep: if the code stops logging it, the count is 0 and looks like a pass
-const LOG_TEXT = ['NetGuard.JNI', 'TLS server name not found'];
+const LOG_TEXT = ['NetGuard.JNI', 'TLS server name not found', 'UDP new session', 'UDP blocked session'];
 
 // Names from Android, not this repo
 const EXTERNAL_NAMES = new Set(['NOT_VPN']);

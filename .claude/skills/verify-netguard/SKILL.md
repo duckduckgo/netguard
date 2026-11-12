@@ -27,6 +27,7 @@ Read the reference file for the feature you changed:
 |---|---|
 | SNI parsing or blocking (`tls.c`, `tls_parser.c`, TCP handling in AppTP) | [references/apptp-sni.md](references/apptp-sni.md) |
 | DNS parsing or blocking (`dns.c`, `udp.c`) | [references/dns-blocking.md](references/dns-blocking.md) |
+| QUIC, or which UDP flows AppTP blocks (`ip.c`, `udp.c`) | [references/apptp-quic.md](references/apptp-quic.md) |
 | WireGuard / NetP (`src/wireguard`) | [references/wireguard-netp.md](references/wireguard-netp.md) |
 | Speed, stalls, CPU (`tcp.c` queues and windows, `tun.c`, the event loop) | [references/throughput.md](references/throughput.md) |
 

@@ -284,6 +284,8 @@ static void handle_ip(const struct arguments *args,
         allowed = 1; // could be a lingering/blocked session
     else if (protocol == IPPROTO_TCP && (!syn || (uid == 0 && dport == 53)))
         allowed = 1; // assume existing session
+    else if (protocol == IPPROTO_UDP && dport == 443)
+        allowed = 0; // no server name check for QUIC, block it so apps fall back to TCP
     else {
         packet_t packet;
         packet.version = version;
