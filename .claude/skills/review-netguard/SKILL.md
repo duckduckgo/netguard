@@ -56,7 +56,7 @@ For each suspect, write a repro that runs the PR's code and shows the wrong beha
 
   Feed the code the input from the suspect: a truncated packet, a lying length field, a sequence of calls.
 - **Thread or lifecycle bugs:** drive the calls in the bad order from a test, or with two threads and a loop; or on the device (step 4).
-- **Behavior on the wire:** the device check from `verify-netguard`, with a trigger that hits the suspect.
+- **Behavior on the wire:** a `verify-netguard` proof whose trigger hits the suspect, run on the base and the head builds.
 
 Run the same repro against the base. A finding that also fails on the base is an existing bug, not this PR's: report it separately as a note.
 
@@ -72,7 +72,7 @@ Rerun each of its findings yourself; keep only what reproduces. A finding both r
 
 ## 4. Verify on a device
 
-Follow "Reviewing a PR" in the `verify-netguard` skill: the PR's own test steps first, then the feature check, comparing with the base branch. Run its "Check netguard is handling the trigger's traffic" first: most inconclusive device runs are a trigger whose packets never reached netguard. If no phone is available, say the device check wasn't run; the verdict can't be `PASS` without it for a change that affects runtime behavior.
+Follow "Reviewing a PR" in the `verify-netguard` skill: the PR's own test steps first, then the device proof the feature page describes for what the diff touches, each run on the base branch's build and on the head's. Its tool uses its own emulator, so a missing phone is not a reason to skip the device check; name a phone only when the change needs that model. A proof that exits 2 (setup, or traffic that never reached netguard) is inconclusive, not a failure: fix the setup and rerun, or report it. The verdict can't be `PASS` without a device check for a change that affects runtime behavior.
 
 When a device result is inconclusive, explain it from the code before reporting it: read both sides of the path (netguard and the app's callbacks, in the DuckDuckGo Android repository) rather than guessing which side drops the traffic. An explanation you didn't check is a guess; label it so.
 
@@ -81,7 +81,7 @@ When a device result is inconclusive, explain it from the code before reporting 
 - **`PASS`:** no findings, and every required check passed.
 - **`PASS+NOTES`:** no findings that block merging; notes for the author (existing bugs found on the base, a weak or missing test, a stale doc).
 - **`FAIL`:** at least one proven finding: a run shows the change is wrong.
-- **`INCOMPLETE`:** no proven findings, but a required check couldn't run or was inconclusive (no phone, a setup that didn't reach netguard, a flaky trigger). Say what's missing and what it would take. This says nothing against the change; don't use `FAIL` for it.
+- **`INCOMPLETE`:** no proven findings, but a required check couldn't run or was inconclusive (a proof that exited 2, a setup that didn't reach netguard, a flaky trigger). Say what's missing and what it would take. This says nothing against the change; don't use `FAIL` for it.
 
 A weakness in the PR's test steps or tools (a probe that reports OK without exercising the fix) is a note, not a finding, unless a run shows the change itself is wrong.
 
@@ -98,7 +98,7 @@ Findings:
 <per finding: what breaks, the file and line, the exact command, its output, and what the intent requires>
 or: No proven findings (<n> suspects dropped: <why, in a few words>).
 
-Device check: <the side-by-side result, as in verify-netguard step 5, or "not run: <why>">
+Device check: <the summary `compare --expect fix|same <proof>` from verify-netguard prints (`fix` when the PR fixes a bug, `same` when it shouldn't change behavior), or "not run: <why>">
 Not checked: <what this review didn't cover>
 ```
 

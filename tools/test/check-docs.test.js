@@ -22,7 +22,7 @@ function repo(changes = {}) {
         '.claude/skills/verify/SKILL.md': 'Count `TLS server name not found` under the `NetGuard.JNI` tag; see [SNI](references/sni.md).',
         '.claude/skills/verify/references/sni.md': 'Run `./test_tls`. A plain `grep VPN` also matches `NOT_VPN`. Remove `/sdcard/ui.xml`.',
         'android/publish_local.sh': '',
-        'src/netguard/tls.c': 'log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found"); // NetGuard.JNI',
+        'src/netguard/tls.c': 'log_print(PLATFORM_LOG_PRIORITY_INFO, "TLS server name not found"); // NetGuard.JNI, new session mss',
         'src/wireguard/jni.c': 'int is_pkt_allowed(const uint8_t *buffer, int length) {}',
         'src/test/Makefile': 'EXECUTABLE = test_tls\nTCP_WINDOW_EXECUTABLE = test_tcp_window\n',
         ...changes,
@@ -71,4 +71,23 @@ test('the listed native tests must be the Makefile\'s', () => {
     const problems = check(renamed);
     assert.ok(problems.some(p => p.includes('lists the test `test_tcp_window`')));
     assert.ok(problems.some(p => p.includes("doesn't list the test `test_window`")));
+});
+
+test('a name the skill code defines passes, and is reported once the code renames it', () => {
+    const skill = { '.claude/skills/verify/SKILL.md': 'Set `VERIFY_HOME` to move the state, `NetGuard.JNI` logs `TLS server name not found`.' };
+    assert.deepStrictEqual(check(repo({ ...skill, '.claude/skills/verify/scripts/verify': 'os.environ.get("VERIFY_HOME")' })), []);
+    const renamed = repo({ ...skill, '.claude/skills/verify/scripts/verify': 'os.environ.get("VERIFY_STATE")' });
+    assert.ok(check(renamed).some(p => p.includes('`VERIFY_HOME`')));
+});
+
+test('a skill doc can give its own files from the skill folder', () => {
+    const doc = { '.claude/skills/verify/references/sni.md': 'Run `proofs/sni.py`. A plain `grep VPN` also matches `NOT_VPN`.' };
+    assert.deepStrictEqual(check(repo({ ...doc, '.claude/skills/verify/proofs/sni.py': '' })), []);
+    assert.ok(check(repo(doc)).some(p => p.includes('`proofs/sni.py`')));
+});
+
+test('a skill that is a symlink to its folder is checked', () => {
+    const root = repo({ '.agents/skills/linked/SKILL.md': 'Run `missing.sh`.' });
+    fs.symlinkSync('../../.agents/skills/linked', path.join(root, '.claude/skills/linked'));
+    assert.ok(check(root).some(p => p.includes('`missing.sh`')));
 });

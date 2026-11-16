@@ -23,7 +23,8 @@ export CGO_ENABLED := 1
 
 default: $(DESTDIR)/libwg-go.so
 
-$(DESTDIR)/libwg-go.so: $(wildcard *) $(wildcard ../netguard/src/*)
+# jni.c includes netguard's headers: a change to one must rebuild the library.
+$(DESTDIR)/libwg-go.so: $(wildcard *) $(wildcard ../netguard/include/*)
 	 go build -tags android -ldflags="$(CLANG_LDFLAGS)" -v -trimpath -o "$@" -buildmode c-shared
 
 .DELETE_ON_ERROR:

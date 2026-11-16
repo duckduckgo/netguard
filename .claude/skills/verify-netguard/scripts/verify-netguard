@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+"""verify-netguard: run proofs against the DuckDuckGo app carrying this checkout's netguard.
+
+  verify-netguard device start|stop|serial [--window]   the checkout's own rootable emulator
+  verify-netguard snapshot save|load|list [NAME]   a state set up by hand (default netp-signed-in: an account
+                                              signed in to the app), which a proof with SNAPSHOT starts from
+  verify-netguard app --apk P | --pull        the DuckDuckGo debug APK the libraries go into
+  verify-netguard build [--base REF]          build libnetguard.so and libwg-go.so and record the source;
+                                              --base builds REF (e.g. origin/main) in a worktree, for "before"
+  verify-netguard install [--base] [--replace]   install the app with the recorded build's libraries (refused
+                                              if the source changed), or the base build's
+  verify-netguard doctor                      read-only: whether prove can run now, and against what
+  verify-netguard prove PROOF [options]       run a proof file, decide pass/fail, write evidence
+  verify-netguard compare --expect fix|same PROOF [options]
+                                              the proof on the base build, then this checkout's, and the summary;
+                                              exit 0 when the runs show the expectation, 1 when not
+  verify-netguard pr-summary [--expect fix|same BEFORE] AFTER
+                                              Markdown for the PR's Verification section, from evidence folders
+  verify-netguard restore                     put a device back: its original app, no probe, its settings
+  verify-netguard selftest [--with-broken-build]   check the tool refuses what it must, and passes a good build
+  verify-netguard cleanup [--all]             remove unused builds and old evidence; --all also the base worktree,
+                                              the emulator and every file the tool created
+
+Exit codes: 0 pass, 1 a check failed, 2 error (setup, stale build, wrong APK, no device, the proof raised).
+"""
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+sys.dont_write_bytecode = True   # keep __pycache__ out of the checkout
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "lib"))
+
+from verify_netguard import core, harness, summary  # noqa: E402
+from verify_netguard.core import Error  # noqa: E402
+
+MOTO_RMEM_MAX = 134217728
+BROKEN_NETGUARD = "1.10.2"   # scales the SYN-ACK window: with --like-moto, window-mode trackers get through
+APPTP = core.SKILL / "tests/apptp.py"
+NETP = core.SKILL / "tests/netp.py"
+MUST_FAIL = core.SKILL / "tests/must_fail.py"
+TRACKERS = ("app.adjust.com", "api2.branch.io")
+# Breaks of this checkout's code that tests/apptp.py must catch, each with exactly the checks it must fail.
+MUTATIONS = [
+    ("netguard never reads the server name",
+     ("src/netguard/tls.c", "if (strlen(sn) == 0) {", "if (1) {"),
+     [f"{m}: {t} blocked" for m in ("single", "window", "split") for t in TRACKERS]),
+    # Blocks the trackers too, but without the app's decision: the "decision logged" checks must catch that. late-sni
+    # is unaffected: netguard finds no name in its first segment, so it never reaches the broken line.
+    ("netguard blocks every server name without asking the app",
+     ("src/netguard/tls.c", "return is_domain_blocked(args, sn, uid);", "return 1;"),
+     [f"{m}: {c}" for m in ("single", "window", "split") for c in (
+         "control example.com allowed", *(f"{t} blocked" for t in TRACKERS))]),
+]
+# The same for tests/netp.py: the tunnel ignores netguard's answer, so trackers go through though the app decided to
+# block them.
+NETP_MUTATION = ("the tunnel ignores netguard's block",
+                 ("src/wireguard/tun_android.go", "if allow == 0 {", "if allow == 0 && false {"),
+                 [f"NetP+AppTP: {t} blocked" for t in TRACKERS])
+
+
+def cmd_device(args):
+    actions = {"start": lambda: core.start_emulator(args.window), "stop": core.stop_emulator,
+               "serial": core.emulator_serial}
+    print(actions[args.action]())
+
+
+def cmd_snapshot(args):
+    if args.action == "list":
+        print("\n".join(core.snapshots()))
+        return
+    core.use_device()
+    if args.action == "save":
+        core.check_installed()   # proofs reinstall the build under test over the app in the snapshot: it must be ours
+        core.save_snapshot(args.name)
+    else:
+        core.load_snapshot(args.name)
+    print(f"{'saved' if args.action == 'save' else 'loaded'} {args.name}")
+
+
+def cmd_app(args):
+    print(json.dumps(core.set_app(args.apk, args.pull), indent=2))
+
+
+def cmd_build(args):
+    print(json.dumps(core.build_base(args.base, args.abi) if args.base else core.build(args.abi), indent=2))
+
+
+def cmd_install(args):
+    apk, record = core.install(args.base, args.replace)
+    print(f"installed {apk.name} ({record['sha256'][:12]}) on {os.environ['ANDROID_SERIAL']}")
+
+
+def cmd_prove(args):
+    if any("=" not in p for p in args.param):
+        raise Error("--param takes KEY=VALUE")
+    params = dict(p.split("=", 1) for p in args.param)
+    def from_repo(arg):
+        path = Path(arg)
+        return str(path.resolve().relative_to(core.REPO)) if path.exists() and path.resolve().is_relative_to(core.REPO) else arg
+
+    rerun = " ".join(from_repo(a) for a in sys.argv)
+    return harness.prove(args.proof, params, args.rmem_max, rerun)
+
+
+def prove_options(args):
+    """The options `prove` and `compare` share, as `prove` takes them."""
+    return [*(a for p in args.param for a in ("--param", p)), *(["--rmem-max", str(args.rmem_max)] if args.rmem_max else [])]
+
+
+def cmd_compare(args):
+    """The proof on the base build, then on this checkout's, and the summary of both. Exit 0 when the runs show the
+    expectation, 1 when they don't, 2 when either couldn't run."""
+    base = core.load("base.json")
+    if not base:
+        raise Error("no base build: run `verify-netguard build --base <ref>` first")
+    if base["head"] != core.fork_point(base["base"]):
+        raise Error(f"the base build isn't where this branch leaves {base['base']} (a rebase or a branch switch since): "
+                    f"run `verify-netguard build --base {base['base']}` again")
+    built = core.load("build.json")
+    if not built or built["fingerprint"] != core.source_fingerprint()["fingerprint"]:
+        raise Error("no build of the current source: run `verify-netguard build` first")
+    evidence = []
+    for side in (["--base"], []):
+        code, _, err = cli("install", *side)
+        if code:
+            raise Error(f"install {' '.join(side)} failed: {err}")
+        code, out, err = cli("prove", args.proof, *prove_options(args))
+        print(f"{'base' if side else 'branch'}: {out.get('verdict', 'ERROR')}, {out.get('evidence', err)}", file=sys.stderr)
+        if not out.get("evidence"):
+            raise Error(f"the proof didn't run on the {'base' if side else 'branch'}: {err}")
+        evidence.append(out["evidence"])
+    text = summary.summarize(evidence[1], evidence[0], args.expect)
+    (Path(evidence[1]) / "compare.md").write_text(text)
+    print(text, end="")
+    verdicts = [json.loads((Path(e) / "manifest.json").read_text())["verdict"] for e in evidence]
+    if "ERROR" in verdicts:
+        return 2
+    want_before, want_after, _, _ = summary.EXPECTATIONS[args.expect]
+    return 0 if verdicts[0] in want_before and verdicts[1] in want_after else 1
+
+
+def cmd_doctor(args):
+    """Read-only: whether `prove` can run now, and what it would run against."""
+    git = ["git", "-C", str(core.REPO)]
+    source = core.source_fingerprint()
+    serial = os.environ.get("ANDROID_SERIAL") or core.emulator_serial()
+    online = shutil.which("adb") is not None and core.device_online(serial)
+    report = {
+        "branch": core.run(git + ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip(),
+        "commit": source["head"][:10],
+        "native changes uncommitted": len(core.run(git + ["status", "--porcelain", "--", *core.NATIVE_SOURCES]).stdout.splitlines()),
+        "device": serial + ("" if online else " (not running)"),
+        "device is": "this checkout's emulator" if serial == core.emulator_serial() else "named by ANDROID_SERIAL: ask before changing it",
+        "evidence": str(core.STATE / "evidence"),
+    }
+    problems = []
+    for tool, why in (("android", "UI steps"), ("cbmc", "formal checks")):
+        if not shutil.which(tool):
+            report[f"no {tool}"] = f"needed for {why}"
+            if tool == "android":
+                problems.append("install the Android CLI")
+    app = core.load("app.json")
+    report["app"] = f"DuckDuckGo debug {app['version']}" if app else None
+    if not app:
+        problems.append("no app recorded: `app --apk <APK>` or `app --pull`")
+    built, base = core.load("build.json"), core.load("base.json")
+    report["build"] = (("current" if built["fingerprint"] == source["fingerprint"] else "stale") if built else None)
+    report["base build"] = f"{base['base']} ({base['head'][:10]})" if base else None
+    if not online:
+        problems.append(f"{serial} isn't running: `device start`, or set ANDROID_SERIAL")
+    else:
+        os.environ["ANDROID_SERIAL"] = serial
+        try:
+            installed = core.check_installed()
+            report["installed"] = f"base {installed['base']}" if installed.get("base") else "this checkout's build"
+        except Error as e:
+            report["installed"] = None
+            problems.append(str(e))
+        if serial == core.emulator_serial():
+            report["snapshots"] = core.snapshots()
+    report["ready to prove"] = not problems
+    if problems:
+        report["problems"] = problems
+    print(json.dumps(report, indent=2))
+    return 0 if not problems else 2
+
+
+def cmd_pr_summary(args):
+    if len(args.evidence) > 2:
+        raise Error("pr-summary takes the after run's evidence folder, or the before then the after folder")
+    before, after = (args.evidence if len(args.evidence) == 2 else [None, args.evidence[0]])
+    print(summary.summarize(after, before, args.expect), end="")
+
+
+def cmd_restore(args):
+    print(json.dumps(core.restore(), indent=2))
+
+
+def cmd_cleanup(args):
+    print(json.dumps(core.cleanup(args.all, args.evidence_days), indent=2))
+
+
+# --- selftest -------------------------------------------------------------------------------------------------------
+
+def cli(*args, env=None):
+    p = subprocess.run([sys.executable, str(Path(__file__).resolve()), *args], capture_output=True, text=True,
+                       env={**os.environ, **(env or {})})
+    out = json.loads(p.stdout) if p.stdout.strip().startswith("{") else {}
+    return p.returncode, out, p.stderr.strip()
+
+
+def cmd_selftest(args):
+    steps = []
+
+    def step(name, ok, why=""):
+        steps.append({"step": name, "ok": bool(ok), **({"why": why} if why and not ok else {})})
+        print(f"{'ok  ' if ok else 'FAIL'} {name}{': ' + why if why and not ok else ''}", file=sys.stderr)
+        return ok
+
+    def finish():
+        ok = all(s["ok"] for s in steps)
+        print(json.dumps({"ok": ok, "steps": steps}, indent=2))
+        return 0 if ok else 1
+
+    if not os.environ.get("ANDROID_SERIAL") and not core.device_online(core.emulator_serial()):
+        code, _, err = cli("device", "start")
+        if not step("emulator started", code == 0, err):
+            return finish()
+    core.use_device()
+    if not step("an app is recorded", core.load("app.json"), "run `verify-netguard app --apk <DuckDuckGo debug APK>`"):
+        return finish()
+    record = core.load("build.json")
+    if not record or record["fingerprint"] != core.source_fingerprint()["fingerprint"]:
+        code, _, err = cli("build")
+        if not step("libraries built from this source", code == 0, err):
+            return finish()
+    code, _, err = cli("install")
+    if not step("recorded build installed", code == 0, err):
+        return finish()
+
+    code, out, err = cli("prove", str(MUST_FAIL))
+    step("the harness refuses what it must (tests/must_fail.py)", code == 0, err or f"exit {code}, see {out.get('evidence')}")
+
+    rmem_before = core.adb("shell", "cat", core.RMEM_MAX).strip()
+    code, out, err = cli("prove", str(APPTP), "--like-moto")
+    step("tests/apptp.py passes on this build (--like-moto)", code == 0, err or f"exit {code}, see {out.get('evidence')}")
+    passing = out.get("evidence")
+    if out.get("evidence"):
+        # The summary goes into a public PR: it must not carry local paths or the user's name.
+        text = subprocess.run([sys.executable, __file__, "pr-summary", out["evidence"]], capture_output=True, text=True).stdout
+        leaks = [s for s in (str(Path.home()), str(core.REPO), os.environ.get("USER", "")) if s and s in text]
+        step("pr-summary has no local paths or user name", text.startswith("### Verification") and not leaks, f"found {leaks}")
+    step("rmem_max restored after the run", core.adb("shell", "cat", core.RMEM_MAX).strip() == rmem_before)
+
+    stale = core.REPO / "src/netguard/verify-netguard-selftest-stale.c"
+    try:
+        stale.write_text("/* an uncommitted change the build doesn't include */\n")
+        code, _, err = cli("install")
+        step("refuses to install a stale build", code == 2 and "stale build" in err, f"exit {code}: {err}")
+    finally:
+        stale.unlink()
+
+    outside = core.SKILL / "verify-netguard-selftest-unrelated.txt"
+    try:
+        outside.write_text("a change outside the native sources\n")
+        code, _, err = cli("prove", str(MUST_FAIL))
+        step("a change outside the native sources doesn't make the build stale", code == 0, f"exit {code}: {err}")
+    finally:
+        outside.unlink()
+
+    installed = core.load(core.installed_record())
+    try:
+        core.save(core.installed_record(), {**installed, "sha256": "0" * 64})
+        code, _, err = cli("prove", str(MUST_FAIL))
+        step("refuses an app it didn't install", code == 2 and "isn't the APK" in err, f"exit {code}: {err}")
+    finally:
+        core.save(core.installed_record(), installed)
+
+    code, _, err = cli("prove", str(MUST_FAIL), env={"ANDROID_SERIAL": "emulator-5998"})
+    step("refuses without a device", code == 2 and "isn't running" in err, f"exit {code}: {err}")
+
+    # Proofs that must never pass: written outside the repo, for this run.
+    bad = core.STATE / "selftest-proofs"
+    bad.mkdir(parents=True, exist_ok=True)
+    (bad / "no_checks.py").write_text('"""Makes no checks."""\n\ndef run(android):\n    android.note("nothing checked")\n')
+    (bad / "raises.py").write_text('"""Raises before checking."""\n\ndef run(android):\n    raise ValueError("a bug in the proof")\n')
+    code, out, err = cli("prove", str(bad / "no_checks.py"))
+    step("a proof with no checks is an error, not a pass", code == 2 and out.get("verdict") == "ERROR", f"exit {code}: {out or err}")
+    code, out, err = cli("prove", str(bad / "raises.py"))
+    step("a proof that raises is an error", code == 2 and "ValueError" in out.get("error", ""), f"exit {code}: {out or err}")
+
+    # NetP needs an account signed in by hand, kept as a snapshot of this checkout's emulator.
+    netp = os.environ["ANDROID_SERIAL"] == core.emulator_serial() and "netp-signed-in" in core.snapshots()
+    if netp:
+        code, out, err = cli("prove", str(NETP))
+        step("tests/netp.py passes on this build", code == 0, err or f"exit {code}, see {out.get('evidence')}")
+    else:
+        print("skip tests/netp.py: no netp-signed-in snapshot (features/wireguard-netp.md)", file=sys.stderr)
+
+    if args.with_broken_build:
+        def fails_on(name, build, prove_args, expected, proof=APPTP):
+            """Installs a broken build and checks the proof fails for the right reason: exactly `expected`."""
+            try:
+                core.install(libs=build())
+            except Error as e:
+                step(f"{name}: installed", False, str(e))
+                return None
+            code, out, err = cli("prove", str(proof), *prove_args)
+            failed = []
+            if out.get("evidence"):
+                manifest = json.loads((Path(out["evidence"]) / "manifest.json").read_text())
+                failed = [c["check"] for c in manifest["checks"] if not c["ok"]]
+            missed, extra = sorted(set(expected) - set(failed)), sorted(set(failed) - set(expected))
+            step(f"tests/{proof.name} fails on {name}, on exactly the checks it should", code == 1 and not missed and not extra,
+                 err or f"exit {code}; not failed: {missed}; failed but shouldn't: {extra}")
+            return out.get("evidence")
+
+        try:
+            print(f"building netguard {BROKEN_NETGUARD} (once) ...", file=sys.stderr)
+            fails_on(f"netguard {BROKEN_NETGUARD}", lambda: core.build_base(BROKEN_NETGUARD, record=None),
+                     ["--like-moto", "--param", "modes=window"], [f"window: {t} blocked" for t in TRACKERS])
+            broken = None
+            for name, mutation, expected in MUTATIONS:
+                broken = fails_on(name, lambda: core.build_base("HEAD", record=None, mutation=mutation), [], expected) or broken
+            if netp:
+                name, mutation, expected = NETP_MUTATION
+                fails_on(name, lambda: core.build_base("HEAD", record=None, mutation=mutation), [], expected, NETP)
+            if broken and passing:
+                # A failing run compared with a passing one: the summary goes into a public PR too.
+                text = subprocess.run([sys.executable, __file__, "pr-summary", "--expect", "fix", broken, passing],
+                                      capture_output=True, text=True).stdout
+                leaks = [s for s in (str(Path.home()), str(core.REPO), os.environ.get("USER", "")) if s and s in text]
+                step("a before/after pr-summary has no local paths and says the fix is as expected",
+                     "As expected for a fix" in text and not leaks, f"leaks {leaks}" if leaks else text[:300])
+        finally:
+            code, _, err = cli("install")
+            step("recorded build reinstalled", code == 0, err)
+    return finish()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+    device = sub.add_parser("device")
+    device.add_argument("action", choices=["start", "stop", "serial"])
+    device.add_argument("--window", action="store_true", help="show the emulator's screen, e.g. to sign in to the app")
+    snapshot = sub.add_parser("snapshot", help="save or load a state set up by hand, e.g. an account signed in")
+    snapshot.add_argument("action", choices=["save", "load", "list"])
+    snapshot.add_argument("name", nargs="?", default="netp-signed-in")
+    app = sub.add_parser("app").add_mutually_exclusive_group(required=True)
+    app.add_argument("--apk", help="a DuckDuckGo Android debug APK (a local build, or one from the app's CI)")
+    app.add_argument("--pull", action="store_true", help="the debug app installed on the device")
+    build = sub.add_parser("build")
+    build.add_argument("--base", metavar="REF", help="build REF (e.g. origin/main) instead of this checkout")
+    build.add_argument("--abi", help="the ABI to build for (default: the device's, else the emulator's)")
+    install = sub.add_parser("install")
+    install.add_argument("--base", action="store_true", help="install the build from `build --base`")
+    install.add_argument("--replace", action="store_true",
+                         help="on a real device, uninstall a differently signed app first (clears its data)")
+    prove = sub.add_parser("prove")
+    compare = sub.add_parser("compare", help="the proof on the base build, then on this checkout's, side by side")
+    compare.add_argument("--expect", required=True, choices=["fix", "same"],
+                         help="fix = fails on the base and passes on the branch; same = passes on both")
+    for p in (prove, compare):
+        p.add_argument("proof", help="a proof file, e.g. .claude/skills/verify-netguard/proofs/my_fix.py")
+        p.add_argument("--param", action="append", default=[], metavar="KEY=VALUE", help="passed to the proof")
+        p.add_argument("--rmem-max", type=int, help="set /proc/sys/net/core/rmem_max for the run (root)")
+        p.add_argument("--like-moto", dest="rmem_max", action="store_const", const=MOTO_RMEM_MAX,
+                       help=f"--rmem-max {MOTO_RMEM_MAX}, the moto g(60) value that triggers the netguard window bug")
+    sub.add_parser("doctor", help="read-only: whether prove can run now, and against what")
+    pr_summary = sub.add_parser("pr-summary", help="Markdown for the PR's Verification section")
+    pr_summary.add_argument("evidence", nargs="+", metavar="EVIDENCE",
+                            help="the after run's evidence folder, or the before (base) then after folders")
+    pr_summary.add_argument("--expect", choices=["fix", "same"],
+                            help="with two folders: fix = fails on the base and passes on the branch; same = passes on both")
+    sub.add_parser("restore")
+    cleanup = sub.add_parser("cleanup")
+    cleanup.add_argument("--all", action="store_true", help="also the base worktree, the emulator and all state")
+    cleanup.add_argument("--evidence-days", type=int, default=30, help="keep evidence newer than this (default 30)")
+    sub.add_parser("selftest").add_argument("--with-broken-build", action="store_true",
+                                            help=f"also check tests/apptp.py fails on netguard {BROKEN_NETGUARD}")
+    args = parser.parse_args()
+    handlers = {"device": cmd_device, "snapshot": cmd_snapshot, "app": cmd_app, "build": cmd_build, "install": cmd_install, "prove": cmd_prove, "compare": cmd_compare, "doctor": cmd_doctor,
+                "pr-summary": cmd_pr_summary, "restore": cmd_restore, "selftest": cmd_selftest, "cleanup": cmd_cleanup}
+    try:
+        if args.command not in ("pr-summary", "doctor"):   # read-only
+            held = core.lock()  # noqa: F841 (released when the process exits)
+        return handlers[args.command](args) or 0
+    except (Error, subprocess.CalledProcessError) as e:
+        detail = getattr(e, "stderr", "") or ""
+        print(f"error: {e}{(': ' + detail.strip()) if detail else ''}", file=sys.stderr)
+        return 2
+    except Exception as e:   # anything else is the tool or the input failing, never "a check failed"
+        print(f"error: {type(e).__name__}: {e}", file=sys.stderr)
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
