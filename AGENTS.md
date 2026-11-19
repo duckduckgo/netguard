@@ -54,7 +54,7 @@ From the `android/` directory:
 ./gradlew clean               # Clean build artifacts
 ```
 
-On Apple Silicon Macs the Gradle native build fails (it runs x86 ninja under Rosetta). Build the native libraries with the SDK's cmake directly instead, as in the `verify-netguard` skill (`.claude/skills/verify-netguard/SKILL.md`).
+On Apple Silicon Macs the Gradle native build fails (it runs x86 ninja under Rosetta). Build the native libraries with the SDK's cmake directly instead: `.claude/skills/verify-netguard/scripts/verify-netguard build` does it (see `compile_libs` in `.claude/skills/verify-netguard/lib/verify_netguard/core.py` for the commands).
 
 ### Testing
 ```bash
@@ -78,10 +78,12 @@ make clean    # Clean test artifacts
 The WireGuard library is built via its own Makefile during the CMake build process, invoked as a custom target.
 
 ### Keeping these docs current
-This file and the skills in `.claude/skills` describe the repo. If a step in them fails or is wrong because the repo changed, fix the doc in the same commit as the code change, and say so in the PR. CI runs `node tools/check-docs/check-docs.js`, which fails when a file, link, C name, native test or log message the docs mention no longer exists.
+This file and the skills in `.claude/skills` describe the repo. If a step in them fails or is wrong because the repo changed, fix the doc in the same commit as the code change, and say so in the PR. CI runs `node tools/check-docs/check-docs.js`, which fails when a file, link, name (in `src/` or a skill's own code), native test or log message the docs mention no longer exists.
 
 ### Verifying changes
-Unit tests are not enough. Before calling a change to `src/netguard` or `src/wireguard` done, verify it on a device with the `verify-netguard` skill (`.claude/skills/verify-netguard/SKILL.md`): the change built into the app, compared with `main` on the same phone.
+Unit tests are not enough. Before calling a change to `src/netguard` or `src/wireguard` done, verify it on a device with the `verify-netguard` skill (`.claude/skills/verify-netguard/SKILL.md`): a proof run against the app carrying your build of the libraries, and against the base's, on the same emulator or phone.
+
+Some features also have a formal check that runs without a device: for the SNI parser (`src/netguard/tls_parser.c`), CBMC proves it safe for every packet up to a size bound, which neither the unit tests nor the device check can. `.claude/skills/verify-netguard/features/README.md` lists each feature's checks.
 
 To review someone else's PR, use the `review-netguard` skill (`.claude/skills/review-netguard/SKILL.md`): it proves each finding with a run, verifies on a device, and drafts a PASS / PASS+NOTES / FAIL / INCOMPLETE verdict comment.
 

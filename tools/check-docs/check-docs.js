@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // Checks that the agent docs (AGENTS.md and the skills in .claude/skills) still match the repo: the files, links and
-// C names they mention exist, the native tests they list are the Makefile's, and the log text they tell agents to grep
+// names they mention exist (in src/, or in a skill's own code), the native tests they list are the Makefile's, and the log text they tell agents to grep
 // for is still logged. Prose about behavior can't be checked this way; keep it rare in the docs.
 //
 // Usage: node tools/check-docs/check-docs.js [--root <repo>]
 'use strict';
 
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
 // Log text the skill counts with grep: if the code stops logging it, the count is 0 and looks like a pass
-const LOG_TEXT = ['NetGuard.JNI', 'TLS server name not found'];
+const LOG_TEXT = ['NetGuard.JNI', 'TLS server name not found', 'new session mss'];
 
 // Names from Android, not this repo
 const EXTERNAL_NAMES = new Set(['NOT_VPN']);
@@ -22,16 +23,30 @@ function walk(dir, files = []) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (SKIPPED_DIRS.has(entry.name)) continue;
         const full = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(full, files);
+        // A skill can be a symlink to its directory (.claude/skills/x -> ../../.agents/skills/x): follow it, and only it.
+        if (entry.isDirectory() || (entry.isSymbolicLink() && path.basename(dir) === 'skills' && fs.existsSync(full)
+            && fs.statSync(full).isDirectory())) walk(full, files);
         else files.push(full);
     }
     return files;
 }
 
+// Files git ignores exist only on this machine, not in CI's checkout: they count as missing, so a local run matches CI
+function ignored(root, paths) {
+    const result = spawnSync('git', ['-C', root, 'check-ignore', '--stdin'], { input: paths.join('\n'), encoding: 'utf8' });
+    return new Set(result.status === 0 ? result.stdout.split('\n').filter(Boolean) : []);
+}
+
+function inCheckout(root, file) {
+    return fs.existsSync(file) && !ignored(root, [file]).size;
+}
+
 function docs(root) {
     const skills = path.join(root, '.claude', 'skills');
     const found = fs.existsSync(skills) ? walk(skills).filter(f => f.endsWith('.md')) : [];
-    return [path.join(root, 'AGENTS.md'), ...found].filter(f => fs.existsSync(f));
+    const all = [path.join(root, 'AGENTS.md'), ...found].filter(f => fs.existsSync(f));
+    const hidden = ignored(root, all);
+    return all.filter(f => !hidden.has(f));
 }
 
 // Inline `code` spans outside fenced blocks, and the text of fenced blocks
@@ -61,6 +76,12 @@ function looksLikePath(span) {
     return span.includes('/') || FILE_EXTENSIONS.test(span);
 }
 
+// .claude/skills/<name> for a doc inside a skill, else null
+function skillRoot(root, doc) {
+    const parts = path.relative(path.join(root, '.claude', 'skills'), doc).split(path.sep);
+    return parts.length > 1 && parts[0] !== '..' ? path.join(root, '.claude', 'skills', parts[0]) : null;
+}
+
 function makefileTests(root) {
     const makefile = path.join(root, 'src', 'test', 'Makefile');
     if (!fs.existsSync(makefile)) return null;
@@ -70,10 +91,15 @@ function makefileTests(root) {
 
 function check(root) {
     const problems = [];
-    const files = walk(root);
+    const all = walk(root);
+    const hidden = ignored(root, all);
+    const files = all.filter(f => !hidden.has(f));
     const basenames = new Set(files.map(f => path.basename(f)));
     const sourceFiles = files.filter(f => f.startsWith(path.join(root, 'src') + path.sep) && /\.(c|h|go)$/.test(f));
     const source = sourceFiles.map(f => fs.readFileSync(f, 'utf8')).join('\n');
+    // A skill's tool (scripts, proofs, the probe) defines names its docs use, e.g. a flag's environment variable
+    const skillCode = files.filter(f => f.startsWith(path.join(root, '.claude', 'skills') + path.sep) && !f.endsWith('.md'))
+        .map(f => fs.readFileSync(f, 'utf8')).join('\n');
     const tests = makefileTests(root);
 
     for (const doc of docs(root)) {
@@ -83,8 +109,9 @@ function check(root) {
         for (const span of spans) {
             if (looksLikePath(span)) {
                 const relative = span.replace(/^\.\//, '').replace(/\/$/, '');
+                // A skill's docs give its own files from the skill's folder, e.g. proofs/apptp.py
                 const exists = span.includes('/')
-                    ? fs.existsSync(path.join(root, relative))
+                    ? [root, skillRoot(root, doc)].some(base => base && inCheckout(root, path.join(base, relative)))
                     : basenames.has(relative);
                 if (!exists) problems.push(`${name} mentions \`${span}\`, which doesn't exist`);
                 continue;
@@ -92,8 +119,9 @@ function check(root) {
             for (const [identifier] of span.matchAll(/\b[A-Za-z]\w*_\w*\b/g)) {
                 // Test names are checked against the Makefile below
                 if (EXTERNAL_NAMES.has(identifier) || basenames.has(identifier) || identifier.startsWith('test_')) continue;
-                if (!new RegExp(`\\b${identifier}\\b`).test(source)) {
-                    problems.push(`${name} mentions \`${identifier}\`, which isn't in src/`);
+                const pattern = new RegExp(`\\b${identifier}\\b`);
+                if (!pattern.test(source) && !pattern.test(skillCode)) {
+                    problems.push(`${name} mentions \`${identifier}\`, which isn't in src/ or the skills' code`);
                 }
             }
         }
@@ -108,7 +136,7 @@ function check(root) {
         for (const link of links) {
             if (/^[a-z]+:/.test(link) || link.startsWith('#')) continue;
             const target = path.resolve(path.dirname(doc), link.split('#')[0]);
-            if (!fs.existsSync(target)) problems.push(`${name} links to ${link}, which doesn't exist`);
+            if (!inCheckout(root, target)) problems.push(`${name} links to ${link}, which doesn't exist`);
         }
 
         if (tests) {

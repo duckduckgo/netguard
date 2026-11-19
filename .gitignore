@@ -7,6 +7,8 @@ src/.vscode/
 *test_tls
 .claude/*
 !.claude/skills/
+# verify-netguard proofs are written per change and never committed: pr-summary carries a proof's source into the PR.
+.claude/skills/verify-netguard/proofs/
 test_tls_split
 test_tls_fuzz
 test_tcp_window
