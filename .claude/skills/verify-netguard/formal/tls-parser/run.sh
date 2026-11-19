@@ -83,7 +83,9 @@ for n in $(seq 0 "$MAX_TLS"); do
   case "$code" in
     0) ;;
     10)
-      if grep ': FAILURE$' "$LOG_DIR/len-$n.log" | grep -qvF "$KNOWN_FINDING"; then new="$new $n"; else known="$known $n"; fi ;;
+      # Captured instead of piped: under pipefail, grep -q closing the pipe early would count a new failure as known.
+      fails="$(grep ': FAILURE$' "$LOG_DIR/len-$n.log")"
+      if grep -qvF "$KNOWN_FINDING" <<<"$fails"; then new="$new $n"; else known="$known $n"; fi ;;
     *) echo "length $n: CBMC didn't run (exit $code)"; tail -20 "$LOG_DIR/len-$n.log" >&2; exit 2 ;;
   esac
 done

@@ -14,7 +14,8 @@ NDK_GO_ARCH_MAP_mips64 := mips64x
 
 CLANG_FLAGS := --target=$(ANDROID_LLVM_TRIPLE) --gcc-toolchain=$(ANDROID_TOOLCHAIN_ROOT) --sysroot=$(ANDROID_SYSROOT)
 CLANG_LDFLAGS := -X golang.zx2c4.com/wireguard/ipc.socketDirectory=/data/data/$(ANDROID_PACKAGE_NAME)/cache/wireguard
-export CGO_CFLAGS := $(CLANG_FLAGS) $(CFLAGS)
+# Go's build cache doesn't hash headers from outside the package (jni.c's netguard ones): their hash in the flags does.
+export CGO_CFLAGS := $(CLANG_FLAGS) $(CFLAGS) -DNETGUARD_HEADERS_HASH=$(shell cat ../netguard/include/* | cksum | cut -d' ' -f1)
 export CGO_LDFLAGS := $(CLANG_FLAGS) $(LDFLAGS) -L$(DESTDIR) -lnetguard -Wl,-soname=libwg-go.so
 export CC := $(ANDROID_C_COMPILER)
 export GOARCH := $(NDK_GO_ARCH_MAP_$(ANDROID_ARCH_NAME))

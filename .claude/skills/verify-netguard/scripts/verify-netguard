@@ -306,7 +306,7 @@ def cmd_selftest(args):
             """Installs a broken build and checks the proof fails for the right reason: exactly `expected`."""
             try:
                 core.install(libs=build())
-            except Error as e:
+            except (Error, subprocess.CalledProcessError) as e:   # e.g. a clone without the 1.10.2 tag
                 step(f"{name}: installed", False, str(e))
                 return None
             code, out, err = cli("prove", str(proof), *prove_args)

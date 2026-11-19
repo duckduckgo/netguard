@@ -18,7 +18,7 @@ If a step here fails or is wrong because the repo changed (a command, a path, a 
 ## Prerequisites
 
 macOS or Linux, with:
-- The Android SDK (`ANDROID_HOME`, `ANDROID_SDK_ROOT`, `sdk.dir` in `android/local.properties`, or the default location) with platform-tools, emulator, cmdline-tools, build-tools, NDK 21.4.7075529, cmake 3.22.1, a platform, and a `google_apis` system image for the host's architecture (`arm64-v8a` on Apple Silicon, `x86_64` otherwise). `device start` names the image to install when it's missing.
+- The Android SDK (`ANDROID_HOME`, `ANDROID_SDK_ROOT`, `sdk.dir` in local.properties under `android/`, or the default location) with platform-tools, emulator, cmdline-tools, build-tools, NDK 21.4.7075529, cmake 3.22.1, a platform, and a `google_apis` system image for the host's architecture (`arm64-v8a` on Apple Silicon, `x86_64` otherwise). `device start` names the image to install when it's missing.
 - `ninja`, `go`, a JDK 17+, Python 3.9+ and the [Android CLI](https://developer.android.com/tools/agents/android-cli) (`android`) on the PATH; the harness runs it with `--no-metrics`. It leaves its instrumentation server on the device (`restore` removes it from a phone), and only one UI driver can run at a time.
 - A DuckDuckGo Android **debug** APK, universal (all ABIs): a local `internalDebug` build of the Android app, or one from its CI. Release builds don't log netguard. Ask the user for one if you have none.
 - A device in English: UI targets match the app's English text.

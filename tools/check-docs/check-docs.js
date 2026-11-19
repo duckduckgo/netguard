@@ -6,6 +6,7 @@
 // Usage: node tools/check-docs/check-docs.js [--root <repo>]
 'use strict';
 
+const { spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -22,17 +23,30 @@ function walk(dir, files = []) {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
         if (SKIPPED_DIRS.has(entry.name)) continue;
         const full = path.join(dir, entry.name);
-        // A skill can be a symlink to its directory (.claude/skills/x -> ../../.agents/skills/x): follow it.
-        if (entry.isDirectory() || (entry.isSymbolicLink() && fs.statSync(full).isDirectory())) walk(full, files);
+        // A skill can be a symlink to its directory (.claude/skills/x -> ../../.agents/skills/x): follow it, and only it.
+        if (entry.isDirectory() || (entry.isSymbolicLink() && path.basename(dir) === 'skills' && fs.existsSync(full)
+            && fs.statSync(full).isDirectory())) walk(full, files);
         else files.push(full);
     }
     return files;
 }
 
+// Files git ignores exist only on this machine, not in CI's checkout: they count as missing, so a local run matches CI
+function ignored(root, paths) {
+    const result = spawnSync('git', ['-C', root, 'check-ignore', '--stdin'], { input: paths.join('\n'), encoding: 'utf8' });
+    return new Set(result.status === 0 ? result.stdout.split('\n').filter(Boolean) : []);
+}
+
+function inCheckout(root, file) {
+    return fs.existsSync(file) && !ignored(root, [file]).size;
+}
+
 function docs(root) {
     const skills = path.join(root, '.claude', 'skills');
     const found = fs.existsSync(skills) ? walk(skills).filter(f => f.endsWith('.md')) : [];
-    return [path.join(root, 'AGENTS.md'), ...found].filter(f => fs.existsSync(f));
+    const all = [path.join(root, 'AGENTS.md'), ...found].filter(f => fs.existsSync(f));
+    const hidden = ignored(root, all);
+    return all.filter(f => !hidden.has(f));
 }
 
 // Inline `code` spans outside fenced blocks, and the text of fenced blocks
@@ -77,7 +91,9 @@ function makefileTests(root) {
 
 function check(root) {
     const problems = [];
-    const files = walk(root);
+    const all = walk(root);
+    const hidden = ignored(root, all);
+    const files = all.filter(f => !hidden.has(f));
     const basenames = new Set(files.map(f => path.basename(f)));
     const sourceFiles = files.filter(f => f.startsWith(path.join(root, 'src') + path.sep) && /\.(c|h|go)$/.test(f));
     const source = sourceFiles.map(f => fs.readFileSync(f, 'utf8')).join('\n');
@@ -95,7 +111,7 @@ function check(root) {
                 const relative = span.replace(/^\.\//, '').replace(/\/$/, '');
                 // A skill's docs give its own files from the skill's folder, e.g. proofs/apptp.py
                 const exists = span.includes('/')
-                    ? [root, skillRoot(root, doc)].some(base => base && fs.existsSync(path.join(base, relative)))
+                    ? [root, skillRoot(root, doc)].some(base => base && inCheckout(root, path.join(base, relative)))
                     : basenames.has(relative);
                 if (!exists) problems.push(`${name} mentions \`${span}\`, which doesn't exist`);
                 continue;
@@ -120,7 +136,7 @@ function check(root) {
         for (const link of links) {
             if (/^[a-z]+:/.test(link) || link.startsWith('#')) continue;
             const target = path.resolve(path.dirname(doc), link.split('#')[0]);
-            if (!fs.existsSync(target)) problems.push(`${name} links to ${link}, which doesn't exist`);
+            if (!inCheckout(root, target)) problems.push(`${name} links to ${link}, which doesn't exist`);
         }
 
         if (tests) {

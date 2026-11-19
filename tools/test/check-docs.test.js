@@ -91,3 +91,16 @@ test('a skill that is a symlink to its folder is checked', () => {
     fs.symlinkSync('../../.agents/skills/linked', path.join(root, '.claude/skills/linked'));
     assert.ok(check(root).some(p => p.includes('`missing.sh`')));
 });
+
+test('a file git ignores counts as missing: CI\'s checkout does not have it', () => {
+    const doc = { '.claude/skills/verify/references/sni.md': 'Set `sdk.dir` in `android/local.properties`.' };
+    const root = repo({ ...doc, 'android/local.properties': '', '.gitignore': 'android/local.properties\n' });
+    require('child_process').spawnSync('git', ['init', '-q', root]);
+    assert.ok(check(root).some(p => p.includes('`android/local.properties`')));
+});
+
+test('a dangling symlink outside the skills folder is skipped, not a crash', () => {
+    const root = repo();
+    fs.symlinkSync('missing-target', path.join(root, 'android/dangling'));
+    assert.deepStrictEqual(check(root), []);
+});

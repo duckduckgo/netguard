@@ -497,10 +497,23 @@ def device_online(serial):
     return run(["adb", "-s", serial, "get-state"], check=False).stdout.strip() == "device"
 
 
+def own_emulator_online():
+    """Whether this checkout's emulator runs. Two checkouts can hash to the same port: another's emulator there is an
+    error, never used."""
+    serial = emulator_serial()
+    if not device_online(serial):
+        return False
+    avd = run(["adb", "-s", serial, "emu", "avd", "name"], check=False).stdout.splitlines()[:1]
+    if [a.strip() for a in avd] != [AVD]:
+        raise Error(f"{serial} runs {avd[0].strip() if avd else 'another emulator'}, not this checkout's {AVD}: stop it, "
+                    "or set ANDROID_SERIAL")
+    return True
+
+
 def use_device():
     """An explicit ANDROID_SERIAL wins (e.g. a real device); otherwise the skill's own emulator, never whatever is attached."""
     serial = os.environ.get("ANDROID_SERIAL") or emulator_serial()
-    if not device_online(serial):
+    if not (device_online(serial) if os.environ.get("ANDROID_SERIAL") else own_emulator_online()):
         raise Error(f"device {serial} isn't running: `verify-netguard device start`, or set ANDROID_SERIAL")
     os.environ["ANDROID_SERIAL"] = serial
     return serial
@@ -525,7 +538,7 @@ def rootable_image():
 def start_emulator(window=False):
     """Headless, unless `window`: a person signs in to the app on it (see `snapshot save`)."""
     serial = emulator_serial()
-    if device_online(serial):
+    if own_emulator_online():
         if window:
             raise Error(f"{serial} is already running; `verify-netguard device stop` first to start it with a window")
         return serial
@@ -606,7 +619,7 @@ def avdmanager():
 
 def stop_emulator():
     serial = emulator_serial()
-    if device_online(serial):
+    if own_emulator_online():
         run(["adb", "-s", serial, "emu", "kill"])
     return serial
 
@@ -668,7 +681,7 @@ def cleanup(everything=False, evidence_days=30):
             run(["git", "-C", str(REPO), "worktree", "remove", "--force", str(tree)], check=False)
             run(["git", "-C", str(REPO), "worktree", "prune"])
             removed.append("base worktree")
-        if device_online(emulator_serial()):
+        if own_emulator_online():
             stop_emulator()
             time.sleep(3)
         if AVD in run([str(sdk() / "emulator/emulator"), "-list-avds"], check=False).stdout.split():
