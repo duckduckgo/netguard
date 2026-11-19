@@ -24,7 +24,6 @@ Implementation of the TUN device interface for Android (wraps linux one)
 // #include <android/log.h>
 // #include <stdlib.h>  // For C.free and C string functions
 // extern int is_pkt_allowed(char *buffer, int length);
-// extern int wg_write_pcap(char *buffer, int length);
 // extern int record_malware_block(const char *domain);
 import "C"
 
@@ -104,15 +103,7 @@ func (tunWrapper *NativeTunWrapper) Write(bufs [][]byte, offset int) (int, error
             }
         }
 
-    pktLen, err :=  tunWrapper.nativeTun.Write(bufs, offset)
-
-    // PCAP recording
-//     pcap_res := int(C.wg_write_pcap((*C.char)(unsafe.Pointer(&buf[offset])), C.int(pktLen+offset)))
-//     if pcap_res < 0 {
-//         C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("PCAP packet not written"))
-//     }
-
-    return pktLen, err
+    return tunWrapper.nativeTun.Write(bufs, offset)
 }
 
 func (tunWrapper *NativeTunWrapper) Flush() error {
@@ -169,12 +160,6 @@ func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int)
                 logInvalidPacket(buf, offset, sizes[i], tag)
         }
     }
-
-    // PCAP recording
-//     pcap_res := int(C.wg_write_pcap((*C.char)(unsafe.Pointer(&buf[offset])), C.int(pktLen+offset)))
-//     if pcap_res < 0 {
-//         C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("PCAP packet not written"))
-//     }
 
     return n, err
 }
