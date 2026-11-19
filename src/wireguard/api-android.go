@@ -9,6 +9,7 @@ package main
 // #cgo LDFLAGS: -llog
 // #cgo CFLAGS: -I../netguard/include
 // #include <android/log.h>
+// #include "platform.h"
 import "C"
 
 import (
@@ -20,6 +21,7 @@ import (
     "runtime"
     "runtime/debug"
     "strings"
+    "sync"
     "unsafe"
 
     "golang.org/x/sys/unix"
@@ -43,7 +45,19 @@ func cstring(s string) *C.char {
 }
 
 func (l AndroidLogger) Printf(format string, args ...interface{}) {
+    if l.level < C.loglevel {
+        return
+    }
     C.__android_log_write(l.level, l.tag, cstring(fmt.Sprintf(format, args...)))
+}
+
+// androidLog writes msg to logcat if level is at or above the log level the app passed to wgTurnOn,
+// like log_print does on the C side
+func androidLog(level C.int, tag *C.char, msg string) {
+    if level < C.loglevel {
+        return
+    }
+    C.__android_log_write(level, tag, cstring(msg))
 }
 
 type TunnelHandle struct {
@@ -51,7 +65,16 @@ type TunnelHandle struct {
     uapi   net.Listener
 }
 
+// tunnelHandlesLock guards tunnelHandles: the JNI calls that use it can run on different threads
 var tunnelHandles map[int32]TunnelHandle
+var tunnelHandlesLock sync.Mutex
+
+func getTunnelHandle(tunnelHandle int32) (TunnelHandle, bool) {
+    tunnelHandlesLock.Lock()
+    defer tunnelHandlesLock.Unlock()
+    handle, ok := tunnelHandles[tunnelHandle]
+    return handle, ok
+}
 
 func init() {
     tunnelHandles = make(map[int32]TunnelHandle)
@@ -131,6 +154,7 @@ func wgTurnOn(interfaceName string, tunFd int32, settings string) int32 {
     }
     logger.Verbosef("Device started")
 
+    tunnelHandlesLock.Lock()
     var i int32
     for i = 0; i < math.MaxInt32; i++ {
         if _, exists := tunnelHandles[i]; !exists {
@@ -138,22 +162,28 @@ func wgTurnOn(interfaceName string, tunFd int32, settings string) int32 {
         }
     }
     if i == math.MaxInt32 {
+        tunnelHandlesLock.Unlock()
         logger.Errorf("Unable to find empty handle")
         uapiFile.Close()
         device.Close()
         return -1
     }
     tunnelHandles[i] = TunnelHandle{device: device, uapi: uapi}
+    tunnelHandlesLock.Unlock()
     return i
 }
 
 //export wgTurnOff
 func wgTurnOff(tunnelHandle int32) {
+    tunnelHandlesLock.Lock()
     handle, ok := tunnelHandles[tunnelHandle]
+    if ok {
+        delete(tunnelHandles, tunnelHandle)
+    }
+    tunnelHandlesLock.Unlock()
     if !ok {
         return
     }
-    delete(tunnelHandles, tunnelHandle)
     if handle.uapi != nil {
         handle.uapi.Close()
     }
@@ -162,7 +192,7 @@ func wgTurnOff(tunnelHandle int32) {
 
 //export wgGetSocketV4
 func wgGetSocketV4(tunnelHandle int32) int32 {
-    handle, ok := tunnelHandles[tunnelHandle]
+    handle, ok := getTunnelHandle(tunnelHandle)
     if !ok {
         return -1
     }
@@ -179,7 +209,7 @@ func wgGetSocketV4(tunnelHandle int32) int32 {
 
 //export wgGetSocketV6
 func wgGetSocketV6(tunnelHandle int32) int32 {
-    handle, ok := tunnelHandles[tunnelHandle]
+    handle, ok := getTunnelHandle(tunnelHandle)
     if !ok {
         return -1
     }
@@ -196,7 +226,7 @@ func wgGetSocketV6(tunnelHandle int32) int32 {
 
 //export wgGetConfig
 func wgGetConfig(tunnelHandle int32) *C.char {
-    handle, ok := tunnelHandles[tunnelHandle]
+    handle, ok := getTunnelHandle(tunnelHandle)
     if !ok {
         return nil
     }
