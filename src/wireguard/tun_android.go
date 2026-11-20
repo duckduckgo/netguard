@@ -129,24 +129,26 @@ func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int)
     // Only process the 'n' packets returned by the TUN read.
     for i :=0; i < n; i++ {
         buf := bufs[i]
-        // Defensive check: skip if size is 0 or offset is out of bounds.
-        if sizes[i] == 0 || len(buf) <= offset {
+        // Defensive check: skip if size is 0 or the packet doesn't fit in the buffer.
+        if sizes[i] == 0 || len(buf) < offset+sizes[i] {
             sizes[i] = 0
             continue
         }
+        // The packet starts at offset and is sizes[i] bytes long; the rest of buf is left over from earlier packets.
+        pkt := buf[offset : offset+sizes[i]]
         // Determine IP version from first nibble (high 4 bits) of first byte.
-        switch buf[offset] >> 4 {
+        switch pkt[0] >> 4 {
             case ipv4.Version:
                 // Skip malformed IPv4 packets.
-                if len(buf) < ipv4.HeaderLen {
+                if len(pkt) < ipv4.HeaderLen {
                     C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Skipping bad IPv4 pkt"))
                     sizes[i] = 0
                 } else {
-                    // Check the IP protocol field (offset + 9 for IPv4).
-                    protocol := buf[offset + 9]
+                    // Check the IP protocol field (byte 9 for IPv4).
+                    protocol := pkt[9]
                     if protocol == 0x06 {
                         // Use native function to decide whether to allow this packet.
-                        allow := int(C.is_pkt_allowed((*C.char)(unsafe.Pointer(&buf[offset])), C.int(sizes[i]+offset)))
+                        allow := int(C.is_pkt_allowed((*C.char)(unsafe.Pointer(&pkt[0])), C.int(len(pkt))))
                         if allow == 0 {
                             C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring("Blocking connection"))
                             sizes[i] = 0 // Set size to 0 to block packet.
@@ -166,7 +168,7 @@ func (tunWrapper *NativeTunWrapper) Read(bufs [][]byte, sizes []int, offset int)
 
 func logInvalidPacket(buf []byte, offset int, size int, tag *C.char) {
     version := buf[offset] >> 4
-    previewLen := min(20, len(buf)-offset)
+    previewLen := min(20, size)
     headerPreview := buf[offset : offset+previewLen]
     msg := fmt.Sprintf("Invalid IP packet: version=%d, size=%d, firstByte=0x%02x, preview=% x", version, size, buf[offset], headerPreview)
     C.__android_log_write(C.ANDROID_LOG_DEBUG, tag, cstring(msg))
