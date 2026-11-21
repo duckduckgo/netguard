@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    App with no code, only there to give dnsprobe an app UID that App Tracking Protection covers (see README.md).
+    Its package name must not start with com.duckduckgo: AppTP never protects those.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.netguard.dnsprobe"
+    android:versionCode="1"
+    android:versionName="1">
+
+    <uses-sdk android:minSdkVersion="23" android:targetSdkVersion="34" />
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <application
+        android:debuggable="true"
+        android:hasCode="false"
+        android:label="dnsprobe" />
+</manifest>
