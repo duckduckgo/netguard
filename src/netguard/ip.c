@@ -253,7 +253,7 @@ static void handle_ip(const struct arguments *args,
     // Limit number of sessions
     if (sessions >= maxsessions) {
         if ((protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6) ||
-            (protocol == IPPROTO_UDP && !has_udp_session(args, pkt, payload)) ||
+            (protocol == IPPROTO_UDP && !has_udp_session(args, pkt, length, payload)) ||
             (protocol == IPPROTO_TCP && syn)) {
             log_print(PLATFORM_LOG_PRIORITY_ERROR,
                         "%d of max %d sessions, dropping version %d protocol %d",
@@ -265,7 +265,7 @@ static void handle_ip(const struct arguments *args,
     // Get uid
     jint uid = -1;
     if (protocol == IPPROTO_ICMP || protocol == IPPROTO_ICMPV6 ||
-        (protocol == IPPROTO_UDP && !has_udp_session(args, pkt, payload)) ||
+        (protocol == IPPROTO_UDP && !has_udp_session(args, pkt, length, payload)) ||
         (protocol == IPPROTO_TCP && syn)) {
         if (args->ctx->sdk <= 28) // Android 9 Pie
             uid = get_uid(version, protocol, saddr, sport, daddr, dport);
@@ -280,7 +280,7 @@ static void handle_ip(const struct arguments *args,
     // Check if allowed
     int allowed = 0;
     struct allowed *redirect = NULL;
-    if (protocol == IPPROTO_UDP && has_udp_session(args, pkt, payload))
+    if (protocol == IPPROTO_UDP && has_udp_session(args, pkt, length, payload))
         allowed = 1; // could be a lingering/blocked session
     else if (protocol == IPPROTO_TCP && (!syn || (uid == 0 && dport == 53)))
         allowed = 1; // assume existing session

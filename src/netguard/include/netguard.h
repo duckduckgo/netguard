@@ -169,7 +169,7 @@ jboolean handle_icmp(const struct arguments *args,
                      int uid,
                      const int epoll_fd);
 
-int has_udp_session(const struct arguments *args, const uint8_t *pkt, const uint8_t *payload);
+int has_udp_session(const struct arguments *args, const uint8_t *pkt, size_t length, const uint8_t *payload);
 
 void block_udp(const struct arguments *args,
                const uint8_t *pkt, size_t length,
