@@ -12,8 +12,9 @@ SPLIT_EXECUTABLE = test_tls_split
 FUZZ_EXECUTABLE = test_tls_fuzz
 TCP_WINDOW_EXECUTABLE = test_tcp_window
 PACKET_HEADERS_EXECUTABLE = test_packet_headers
+DNS_SESSION_EXECUTABLE = test_dns_session
 
-all: $(EXECUTABLE) $(SPLIT_EXECUTABLE) $(FUZZ_EXECUTABLE) $(TCP_WINDOW_EXECUTABLE) $(PACKET_HEADERS_EXECUTABLE)
+all: $(EXECUTABLE) $(SPLIT_EXECUTABLE) $(FUZZ_EXECUTABLE) $(TCP_WINDOW_EXECUTABLE) $(PACKET_HEADERS_EXECUTABLE) $(DNS_SESSION_EXECUTABLE)
 
 $(EXECUTABLE): $(OBJ)
 	$(CC) $(CFLAGS) $(OBJ) -o $@ $(LDFLAGS)
@@ -31,6 +32,9 @@ $(TCP_WINDOW_EXECUTABLE): test_tcp_window.c ../netguard/include/tcp_window.h
 $(PACKET_HEADERS_EXECUTABLE): test_packet_headers.c ../netguard/include/packet_headers.h
 	$(CC) $(CFLAGS) $(SANITIZERS) test_packet_headers.c -o $@ $(LDFLAGS)
 
+$(DNS_SESSION_EXECUTABLE): test_dns_session.c ../netguard/include/dns_session.h ../netguard/include/udp.h
+	$(CC) $(CFLAGS) $(SANITIZERS) test_dns_session.c -o $@ $(LDFLAGS)
+
 # Not a dependency of the build on purpose: the fixtures depend on the local OpenSSL version
 fixtures:
 	python3 -I gen_client_hellos.py > client_hellos.h
@@ -39,6 +43,6 @@ fixtures:
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -rf $(OBJ) $(EXECUTABLE) $(SPLIT_EXECUTABLE) $(FUZZ_EXECUTABLE) $(TCP_WINDOW_EXECUTABLE) $(PACKET_HEADERS_EXECUTABLE) *.dSYM
+	rm -rf $(OBJ) $(EXECUTABLE) $(SPLIT_EXECUTABLE) $(FUZZ_EXECUTABLE) $(TCP_WINDOW_EXECUTABLE) $(PACKET_HEADERS_EXECUTABLE) $(DNS_SESSION_EXECUTABLE) *.dSYM
 
 .PHONY: all clean fixtures
