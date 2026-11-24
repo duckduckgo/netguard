@@ -2,7 +2,7 @@ module golang.zx2c4.com/wireguard/android
 
 go 1.23.1
 
-toolchain go1.24.4
+toolchain go1.26.11
 
 require (
 	github.com/miekg/dns v1.1.62

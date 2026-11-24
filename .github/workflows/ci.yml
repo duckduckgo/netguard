@@ -43,3 +43,42 @@ jobs:
         with:
           name: test-tls-results
           path: test-tls-results.zip
+
+  # Builds both libraries the way build.yml and release.yml publish them (NDK clang, every ABI): the native tests above
+  # compile only the TLS parser, with the host's gcc
+  android_build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # The version comes from the newest X.Y.Z tag
+          fetch-depth: 0
+
+      - name: Configure JDK
+        uses: actions/setup-java@v6
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          # The toolchain line in go.mod, so a runner image update can't change the Go that builds libwg-go.so
+          go-version-file: src/wireguard/go.mod
+          cache-dependency-path: src/wireguard/go.sum
+
+      - name: Setup Android
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+
+      - name: Install CMake 3.18.1
+        run: yes | sdkmanager "cmake;3.18.1"
+
+      - name: Setup gradle
+        uses: gradle/actions/setup-gradle@v5
+
+      - name: Build the release AAR
+        run: cd ./android; ./gradlew assembleRelease --stacktrace

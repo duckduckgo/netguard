@@ -79,6 +79,14 @@ jobs:
           distribution: 'zulu'
           java-version: 17
 
+      - name: Setup Go
+        if: steps.central.outputs.published == 'false'
+        uses: actions/setup-go@v7
+        with:
+          # The toolchain line in go.mod, so a runner image update can't change the Go that builds libwg-go.so
+          go-version-file: src/wireguard/go.mod
+          cache-dependency-path: src/wireguard/go.sum
+
       - name: Setup Android
         if: steps.central.outputs.published == 'false'
         uses: android-actions/setup-android@v4

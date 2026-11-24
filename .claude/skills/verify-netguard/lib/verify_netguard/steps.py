@@ -2,6 +2,7 @@
 import time
 
 from .core import APP_ID, Error
+from .harness import matches
 
 
 def fresh_start(android):
@@ -15,9 +16,14 @@ def open_settings(android):
     # is the browser toolbar's or the native input widget's.
     android.hide_keyboard()
     menu = r"id=/:id\/(browserMenuImageView|inputModeWidgetNavMenu)$/"
-    # The app may first ask to be the default browser, e.g. after a snapshot load moves the clock forward.
-    if android.wait_for(menu, "id=defaultBrowserBottomSheetDialogGhostButton", timeout=30) != menu:
-        android.tap("id=defaultBrowserBottomSheetDialogGhostButton")
+    # The app may first ask to be the default browser (e.g. after a snapshot load moves the clock forward) or offer to
+    # handle cookie pop-ups, one after the other; each is dismissed.
+    prompts = ["id=defaultBrowserBottomSheetDialogGhostButton", "id=cookiePopupOptInDeclineButton"]
+    for _ in prompts:
+        shown = android.wait_for(menu, *prompts, timeout=30)
+        if shown not in prompts:
+            break
+        android.tap(shown)
     android.tap(menu, wait=30)
     android.tap("text=/^Settings$/", first=True)
 
@@ -38,19 +44,28 @@ def enable_apptp(android):
 
 
 def enable_apptp_from_settings(android):
-    """From Settings, turns AppTP on through its onboarding, keeping the app's data (and NetP, if it's on)."""
+    """From Settings, turns AppTP on (through its onboarding the first time), keeping the app's data (and NetP, if
+    it's on)."""
     android.scroll_to("text=/^App Tracking Protection$/")
     android.tap("text=/^App Tracking Protection$/")
-    # The onboarding pages share one call-to-action button: Continue, Continue, then Enable.
-    for label in ("Continue", "Continue", "Enable App Tracking Protection"):
-        android.tap(f"id=onboarding_next_cta,text=/^{label}$/")
-        time.sleep(1)  # the pager animates: don't tap the next page's button before it's the one on screen
-    # Android's VPN permission dialog, shown only the first time.
-    if android.wait_for("text=/^OK$/", "text=Good news! App Tracking Protection is now enabled", timeout=30) == "text=/^OK$/":
-        android.tap("text=/^OK$/")
-    if not android.wait_for("text=Good news! App Tracking Protection is now enabled", timeout=30):
-        raise Error("AppTP's onboarding didn't end on its enabled screen; see ui.log")
-    android.tap("text=/^Got it!$/")
+    onboarding, switch = "id=onboarding_next_cta", "id=deviceShieldTrackerSwitch"
+    # Once AppTP has been onboarded (it stays in the app's data, e.g. in a snapshot), its screen opens with a switch,
+    # which may already be on: tapping it then would turn AppTP off.
+    if android.wait_for(onboarding, switch, timeout=30) == switch:
+        if not any("CHECKED" in node.get("state", []) for node in android.layout() if matches(switch, node)):
+            android.tap(switch)
+    else:
+        # The onboarding pages share one call-to-action button: Continue, Continue, then Enable.
+        for label in ("Continue", "Continue", "Enable App Tracking Protection"):
+            android.tap(f"{onboarding},text=/^{label}$/")
+            time.sleep(1)  # the pager animates: don't tap the next page's button before it's the one on screen
+        # Android's VPN permission dialog, shown only the first time.
+        enabled = "text=Good news! App Tracking Protection is now enabled"
+        if android.wait_for("text=/^OK$/", enabled, timeout=30) == "text=/^OK$/":
+            android.tap("text=/^OK$/")
+        if not android.wait_for(enabled, timeout=30):
+            raise Error("AppTP's onboarding didn't end on its enabled screen; see ui.log")
+        android.tap("text=/^Got it!$/")
     android.broadcast("logging", turn="on")
     time.sleep(3)  # the broadcast restarts the VPN: let the old tunnel go down first
     _wait_for_tunnel(android, "AppTP's tunnel didn't come up")
