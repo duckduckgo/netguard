@@ -534,9 +534,14 @@ struct allowed *is_address_allowed(const struct arguments *args, const packet_t 
     jobject jallowed = (*args->env)->CallObjectMethod(
             args->env, args->instance, midIsAddressAllowed, jpacket);
     ng_add_alloc(jallowed, "jallowed");
-    jniCheckException(args->env);
+    int threw = jniCheckException(args->env);
 
-    if (jallowed != NULL) {
+    if (threw) {
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "isAddressAllowed threw for %s/%u, allowing",
+                  packet->dest, packet->dport);
+        *allowed.raddr = 0;
+        allowed.rport = 0;
+    } else if (jallowed != NULL) {
         if (fidRaddr == NULL) {
             const char *string = "Ljava/lang/String;";
             fidRaddr = jniGetFieldID(args->env, clsAllowed, "raddr", string);
@@ -576,7 +581,7 @@ struct allowed *is_address_allowed(const struct arguments *args, const packet_t 
         log_print(PLATFORM_LOG_PRIORITY_WARN, "is_address_allowed %f", mselapsed);
 #endif
 
-    return (jallowed == NULL ? NULL : &allowed);
+    return (threw || jallowed != NULL ? &allowed : NULL);
 }
 
 jmethodID midInitPacket = NULL;

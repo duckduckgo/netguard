@@ -126,7 +126,10 @@ int is_pkt_allowed(const uint8_t *buffer, int length) {
     jboolean jallow = (*env)->CallBooleanMethod(
             env, GO_BACKEND, MID_SHOULD_ALLOW,
             IPPROTO_TCP, jsource, sport, jdest, dport, jsni, uid);
-    jniCheckException(env);
+    if (jniCheckException(env)) {
+        log_print(PLATFORM_LOG_PRIORITY_WARN, "shouldAllow threw for %s (%s), allowing", sn, dest);
+        jallow = JNI_TRUE;
+    }
 
     // Cleanup
     (*env)->DeleteLocalRef(env, jsource);
