@@ -1,6 +1,6 @@
 #!/bin/sh
-# Checks that AppTP doesn't leak a socket for each connection it fails to open. Builds connprobe and its app,
-# installs them, and counts the sockets open in AppTP's VPN process before and after connprobe makes connections
+# Checks that AppTP resets each connection it fails to open, and doesn't leak a socket for it. Builds connprobe and its
+# app, installs them, and counts the sockets open in AppTP's VPN process before and after connprobe makes connections
 # that netguard can't open. See README.md.
 #
 # Usage: tools/connprobe/run.sh [address] [port] [count]   (defaults: 2001:4860:4860::8888 443 50)
@@ -8,11 +8,13 @@
 # Needs adb, an Android SDK with build-tools and a platform, an NDK, and a debug build of the DuckDuckGo app
 # (APP, default com.duckduckgo.mobile.android.debug) so that its sockets can be counted with run-as.
 #
-# Exits 0 when no sockets leaked, 1 when they did, and 2 when it couldn't check: a setup step failed or the run was
-# inconclusive.
+# Exits 0 when every connection was refused within 500 ms and no sockets leaked, 1 when one wasn't or sockets leaked,
+# and 2 when it couldn't check: a setup step failed or the run was inconclusive.
 set -e
-# Only the LEAK verdict exits 1: any other failure, including a command that stops the script under set -e, exits 2
-trap 'status=$?; [ "$status" -eq 0 ] || [ -n "$LEAKED" ] || exit 2' EXIT
+# Only the LEAK and NO RESET verdicts exit 1: any other failure, including a command that stops the script under set -e,
+# exits 2
+FAILED=
+trap 'status=$?; [ "$status" -eq 0 ] || [ -n "$FAILED" ] || exit 2' EXIT
 
 DIR=$(cd "$(dirname "$0")" && pwd)
 BUILD="$DIR/build"
@@ -108,20 +110,34 @@ if ! echo "$RESULT" | grep -q " 0 connected"; then
         "reach, eg. an IPv6 address on a network without IPv6."
     exit 2
 elif ! echo "$RESULT" | grep -q " 0 failed"; then
-    # netguard doesn't answer a connection it can't open, so the ones it saw time out. A failed one never reached it.
+    # netguard resets a connection it can't open, so the ones it saw are refused. One that failed otherwise never
+    # reached it.
     echo "INCONCLUSIVE: some connections failed on the device before reaching netguard, eg. because the VPN doesn't" \
         "route that address, so netguard never tried to open them."
     exit 2
 elif [ "${REACHED:-0}" -eq 0 ]; then
-    # A connection that never reached netguard times out like one netguard couldn't open, eg. when Android blocks the
+    # A connection that never reached netguard times out like one netguard didn't answer, eg. when Android blocks the
     # probe app's network
     echo "INCONCLUSIVE: netguard logged no failed connect(), so no connection reached the code this checks. Check that" \
         "the probe app has network access, and that netguard logs (a debug build)."
     exit 2
-elif [ $((AFTER - BEFORE)) -ge $((COUNT / 2)) ]; then
+fi
+if [ $((AFTER - BEFORE)) -ge $((COUNT / 2)) ]; then
     echo "LEAK: $((AFTER - BEFORE)) more sockets open after $COUNT connections netguard couldn't open"
-    LEAKED=1
-    exit 1
+    FAILED=1
 else
     echo "OK: no sockets leaked"
 fi
+# A reset to the first SYN arrives in milliseconds. The app resends its SYN after about 1 s, so a refusal slower than
+# 500 ms answered the resend, not the first SYN.
+SLOWEST=$(echo "$RESULT" | sed -n 's/.*slowest in \([0-9]*\) ms.*/\1/p')
+if ! echo "$RESULT" | grep -q " 0 timed out"; then
+    echo "NO RESET: some connections timed out, so netguard didn't answer a connection it couldn't open"
+    FAILED=1
+elif [ "${SLOWEST:-0}" -gt 500 ]; then
+    echo "NO RESET: the slowest refusal took $SLOWEST ms, so netguard answered a resent SYN, not the first one"
+    FAILED=1
+else
+    echo "OK: every connection was refused straight away"
+fi
+[ -z "$FAILED" ] || exit 1

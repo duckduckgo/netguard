@@ -817,7 +817,19 @@ jboolean handle_tcp(const struct arguments *args,
             // Open socket
             s->socket = open_tcp_socket(args, &s->tcp, redirect);
             if (s->socket < 0) {
-                // Remote might retry
+                // A network error won't go away if the app resends its SYN:
+                // reset now so the app gives up (or tries its next address)
+                // instead of waiting for its connect timeout. Resource errors
+                // might clear, so leave those for the SYN resend to retry.
+                int err = -s->socket;
+                if (err == ENETUNREACH || err == EHOSTUNREACH || err == EADDRNOTAVAIL ||
+                    err == EAFNOSUPPORT || err == ECONNREFUSED || err == EACCES ||
+                    err == EPERM) {
+                    log_print(PLATFORM_LOG_PRIORITY_WARN, "%s resetting unreachable session",
+                              packet);
+                    s->tcp.recv_window = 0;
+                    write_rst(args, &s->tcp);
+                }
                 if (s->tcp.forward != NULL) {
                     ng_free(s->tcp.forward->data, __FILE__, __LINE__);
                     ng_free(s->tcp.forward, __FILE__, __LINE__);
@@ -1083,6 +1095,7 @@ static void queue_tcp(const struct arguments *args,
     }
 }
 
+// Returns the connecting socket, or -errno of the call that failed.
 static int open_tcp_socket(const struct arguments *args,
                     const struct tcp_session *cur, const struct allowed *redirect) {
     int sock;
@@ -1097,17 +1110,18 @@ static int open_tcp_socket(const struct arguments *args,
 
     // Get TCP socket
     if ((sock = socket(version == 4 ? PF_INET : PF_INET6, SOCK_STREAM, 0)) < 0) {
-        log_print(PLATFORM_LOG_PRIORITY_ERROR, "socket error %d: %s", errno, strerror(errno));
-        if (errno == EMFILE) {
-            report_error(args, errno, "TCP open socket error %d", errno);
+        int err = errno;
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "socket error %d: %s", err, strerror(err));
+        if (err == EMFILE) {
+            report_error(args, err, "TCP open socket error %d", err);
         }
-        return -1;
+        return -err;
     }
 
-    // Protect
+    // Protect (sets no errno; ENOTCONN keeps the caller silent)
     if (protect_socket(args, sock) < 0) {
         close(sock);
-        return -1;
+        return -ENOTCONN;
     }
 
     int on = 1;
@@ -1118,10 +1132,11 @@ static int open_tcp_socket(const struct arguments *args,
     // Set non blocking
     int flags = fcntl(sock, F_GETFL, 0);
     if (flags < 0 || fcntl(sock, F_SETFL, flags | O_NONBLOCK) < 0) {
+        int err = errno;
         log_print(PLATFORM_LOG_PRIORITY_ERROR, "fcntl socket O_NONBLOCK error %d: %s",
-                    errno, strerror(errno));
+                    err, strerror(err));
         close(sock);
-        return -1;
+        return -err;
     }
 
     // Build target address
@@ -1175,9 +1190,10 @@ static int open_tcp_socket(const struct arguments *args,
                                    ? sizeof(struct sockaddr_in)
                                    : sizeof(struct sockaddr_in6)));
     if (err < 0 && errno != EINPROGRESS) {
-        log_print(PLATFORM_LOG_PRIORITY_ERROR, "connect error %d: %s", errno, strerror(errno));
+        err = errno;
+        log_print(PLATFORM_LOG_PRIORITY_ERROR, "connect error %d: %s", err, strerror(err));
         close(sock);
-        return -1;
+        return -err;
     }
 
     return sock;
