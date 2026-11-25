@@ -1,6 +1,6 @@
 /*
  * Opens TCP connections to an address one after the other, waiting up to TIMEOUT_MS for each, and reports how many
- * connected, failed or timed out.
+ * connected, were refused (and how long the slowest refusal took), failed otherwise or timed out.
  *
  * Usage: connprobe [address] [port] [count]   (defaults: 2001:4860:4860::8888 443 50)
  */
@@ -13,9 +13,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #define TIMEOUT_MS 1500
+
+static long now_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000 + ts.tv_nsec / 1000000;
+}
 
 int main(int argc, char **argv) {
     const char *address = argc > 1 ? argv[1] : "2001:4860:4860::8888";
@@ -40,7 +47,8 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    int connected = 0, failed = 0, timed_out = 0;
+    int connected = 0, refused = 0, failed = 0, timed_out = 0;
+    long slowest_refusal_ms = 0;
     for (int i = 0; i < count; i++) {
         int sock = socket(addr.ss_family, SOCK_STREAM, 0);
         if (sock < 0) {
@@ -49,6 +57,7 @@ int main(int argc, char **argv) {
         }
         fcntl(sock, F_SETFL, fcntl(sock, F_GETFL, 0) | O_NONBLOCK);
 
+        long start = now_ms();
         int err = 0;
         if (connect(sock, (struct sockaddr *) &addr, addr_len) < 0) {
             err = errno;
@@ -66,13 +75,17 @@ int main(int argc, char **argv) {
             connected++;
         } else if (err == ETIMEDOUT) {
             timed_out++;
+        } else if (err == ECONNREFUSED) {
+            refused++;
+            long ms = now_ms() - start;
+            if (ms > slowest_refusal_ms) slowest_refusal_ms = ms;
         } else {
             if (failed == 0) printf("connect error: %s\n", strerror(err));
             failed++;
         }
         close(sock);
     }
-    printf("%d connections to %s port %d: %d connected, %d failed, %d timed out\n",
-           count, address, port, connected, failed, timed_out);
+    printf("%d connections to %s port %d: %d connected, %d refused (slowest in %ld ms), %d failed, %d timed out\n",
+           count, address, port, connected, refused, slowest_refusal_ms, failed, timed_out);
     return 0;
 }
