@@ -19,6 +19,7 @@
 
 #include "netguard.h"
 #include "tcp_window.h"
+#include "tcp_queue.h"
 #include "packet_headers.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -38,15 +39,6 @@
 // https://en.wikipedia.org/wiki/Maximum_segment_lifetime
 
 #define SEND_BUF_DEFAULT 163840 // bytes
-
-struct segment {
-    uint32_t seq;
-    uint16_t len;
-    uint16_t sent;
-    int psh;
-    uint8_t *data;
-    struct segment *next;
-};
 
 
 static uint32_t get_send_window(const struct tcp_session *cur);
@@ -81,13 +73,7 @@ static ssize_t write_tcp(const struct arguments *args, const struct tcp_session 
 ///////////////////////////////////////////////////////////////////////////////
 
 void clear_tcp_data(struct tcp_session *cur) {
-    struct segment *s = cur->forward;
-    while (s != NULL) {
-        struct segment *p = s;
-        s = s->next;
-        ng_free(p->data, __FILE__, __LINE__);
-        ng_free(p, __FILE__, __LINE__);
-    }
+    tcp_queue_clear(&cur->forward);
 }
 
 int get_tcp_timeout(const struct tcp_session *t, int sessions, int maxsessions) {
@@ -199,8 +185,8 @@ int monitor_tcp_session(const struct arguments *args, struct ng_session *s, int 
         // Check for outgoing data
         if (s->tcp.forward != NULL) {
             uint32_t buffer_size = get_receive_buffer(s);
-            if (s->tcp.forward->seq == s->tcp.remote_seq &&
-                s->tcp.forward->len - s->tcp.forward->sent < buffer_size)
+            struct segment *next = tcp_queue_next(&s->tcp.forward, s->tcp.remote_seq);
+            if (next != NULL && next->len - next->sent < buffer_size)
                 events = events | EPOLLOUT;
             else
                 recheck = 1;
@@ -524,9 +510,9 @@ void check_tcp_socket(const struct arguments *args,
             if (ev->events & EPOLLOUT) {
                 // Forward data
                 uint32_t buffer_size = get_receive_buffer(s);
-                while (s->tcp.forward != NULL &&
-                       s->tcp.forward->seq == s->tcp.remote_seq &&
-                       s->tcp.forward->len - s->tcp.forward->sent < buffer_size) {
+                struct segment *next;
+                while ((next = tcp_queue_next(&s->tcp.forward, s->tcp.remote_seq)) != NULL &&
+                       next->len - next->sent < buffer_size) {
                     log_print(PLATFORM_LOG_PRIORITY_DEBUG, "%s fwd %u...%u sent %u",
                                 session,
                                 s->tcp.forward->seq - s->tcp.remote_start,
@@ -557,11 +543,7 @@ void check_tcp_socket(const struct arguments *args,
 
                         if (s->tcp.forward->len == s->tcp.forward->sent) {
                             s->tcp.remote_seq = s->tcp.forward->seq + s->tcp.forward->sent;
-
-                            struct segment *p = s->tcp.forward;
-                            s->tcp.forward = s->tcp.forward->next;
-                            ng_free(p->data, __FILE__, __LINE__);
-                            ng_free(p, __FILE__, __LINE__);
+                            tcp_queue_pop(&s->tcp.forward);
                         } else {
                             log_print(PLATFORM_LOG_PRIORITY_WARN,
                                         "%s partial send %u/%u",
@@ -805,7 +787,8 @@ jboolean handle_tcp(const struct arguments *args,
             if (datalen) {
                 log_print(PLATFORM_LOG_PRIORITY_WARN, "%s SYN data", packet);
                 s->tcp.forward = ng_malloc(sizeof(struct segment), "syn segment");
-                s->tcp.forward->seq = s->tcp.remote_seq;
+                // SYN data starts after the SYN's own sequence number
+                s->tcp.forward->seq = s->tcp.remote_seq + 1;
                 s->tcp.forward->len = datalen;
                 s->tcp.forward->sent = 0;
                 s->tcp.forward->psh = tcphdr->psh;
@@ -1039,59 +1022,32 @@ static void queue_tcp(const struct arguments *args,
                const char *session, struct tcp_session *cur,
                const uint8_t *data, uint16_t datalen) {
     uint32_t seq = ntohl(tcphdr->seq);
-    if (compare_u32(seq, cur->remote_seq) < 0)
-        log_print(PLATFORM_LOG_PRIORITY_WARN, "%s already forwarded %u..%u",
-                    session,
-                    seq - cur->remote_start, seq + datalen - cur->remote_start);
-    else {
-        struct segment *p = NULL;
-        struct segment *s = cur->forward;
-        while (s != NULL && compare_u32(s->seq, seq) < 0) {
-            p = s;
-            s = s->next;
-        }
-
-        if (s == NULL || compare_u32(s->seq, seq) > 0) {
+    switch (tcp_queue_add(&cur->forward, cur->remote_seq, seq, data, datalen, tcphdr->psh)) {
+        case TCP_QUEUE_ADDED:
             log_print(PLATFORM_LOG_PRIORITY_DEBUG, "%s queuing %u...%u",
                         session,
                         seq - cur->remote_start, seq + datalen - cur->remote_start);
-            struct segment *n = ng_malloc(sizeof(struct segment), "tcp segment");
-            n->seq = seq;
-            n->len = datalen;
-            n->sent = 0;
-            n->psh = tcphdr->psh;
-            n->data = ng_malloc(datalen, "tcp segment");
-            memcpy(n->data, data, datalen);
-            n->next = s;
-            if (p == NULL)
-                cur->forward = n;
-            else
-                p->next = n;
-        } else if (s != NULL && s->seq == seq) {
-            if (s->len == datalen)
-                log_print(PLATFORM_LOG_PRIORITY_WARN, "%s segment already queued %u..%u",
-                            session,
-                            s->seq - cur->remote_start, s->seq + s->len - cur->remote_start);
-            else if (s->len < datalen) {
-                log_print(PLATFORM_LOG_PRIORITY_WARN, "%s segment smaller %u..%u > %u",
-                            session,
-                            s->seq - cur->remote_start, s->seq + s->len - cur->remote_start,
-                            s->seq + datalen - cur->remote_start);
-                ng_free(s->data, __FILE__, __LINE__);
-                s->len = datalen;
-                s->data = ng_malloc(datalen, "tcp segment smaller");
-                memcpy(s->data, data, datalen);
-            } else {
-                log_print(PLATFORM_LOG_PRIORITY_ERROR, "%s segment larger %u..%u < %u",
-                            session,
-                            s->seq - cur->remote_start, s->seq + s->len - cur->remote_start,
-                            s->seq + datalen - cur->remote_start);
-                ng_free(s->data, __FILE__, __LINE__);
-                s->len = datalen;
-                s->data = ng_malloc(datalen, "tcp segment larger");
-                memcpy(s->data, data, datalen);
-            }
-        }
+            break;
+        case TCP_QUEUE_FORWARDED:
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "%s already forwarded %u..%u",
+                        session,
+                        seq - cur->remote_start, seq + datalen - cur->remote_start);
+            break;
+        case TCP_QUEUE_DUPLICATE:
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "%s segment already queued %u..%u",
+                        session,
+                        seq - cur->remote_start, seq + datalen - cur->remote_start);
+            break;
+        case TCP_QUEUE_LONGER:
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "%s segment longer than queued, now %u..%u",
+                        session,
+                        seq - cur->remote_start, seq + datalen - cur->remote_start);
+            break;
+        case TCP_QUEUE_SHORTER:
+            log_print(PLATFORM_LOG_PRIORITY_WARN, "%s segment shorter than queued %u..%u",
+                        session,
+                        seq - cur->remote_start, seq + datalen - cur->remote_start);
+            break;
     }
 }
 
